@@ -1,16 +1,30 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import OpenIslandCore
 
 struct SignalLightSettingsPane: View {
     var model: AppModel
 
+    @State private var selectedFirmwareURL: URL?
+    @State private var isShowingFlashConfirmation = false
+
     private var lang: LanguageManager { model.lang }
+
+    private var isTransferring: Bool {
+        switch model.signalLight.firmwareUpdater.state {
+        case .transferring, .finishing:
+            true
+        default:
+            false
+        }
+    }
 
     var body: some View {
         Form {
             deviceSection
             modesSection
+            firmwareSection
         }
         .formStyle(.grouped)
         .navigationTitle(lang.t("settings.tab.signalLight"))
@@ -38,6 +52,7 @@ struct SignalLightSettingsPane: View {
                 Button(lang.t("settings.signalLight.disconnect"), role: .destructive) {
                     model.signalLight.disconnect()
                 }
+                .disabled(isTransferring)
             default:
                 discoveredDevicesList
                 Button(lang.t("settings.signalLight.scan")) {
@@ -127,6 +142,7 @@ struct SignalLightSettingsPane: View {
                         get: { model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket) },
                         set: { model.signalLightEffects[bucket] = $0 }
                     ),
+                    isTestDisabled: isTransferring,
                     onTest: { effect in
                         model.signalLight.send(effect)
                     }
@@ -151,12 +167,136 @@ struct SignalLightSettingsPane: View {
         case .idle: lang.t("settings.signalLight.bucket.idle")
         }
     }
+
+    // MARK: Firmware
+
+    @ViewBuilder
+    private var firmwareSection: some View {
+        Section(lang.t("settings.signalLight.firmware")) {
+            if case .connected = model.signalLight.status {
+                firmwareVersionRow
+                firmwareFilePickerRow
+                firmwareActionRow
+            } else {
+                Text(lang.t("settings.signalLight.firmwareNeedsConnection"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var firmwareVersionRow: some View {
+        HStack {
+            Text(lang.t("settings.signalLight.firmwareVersion"))
+            Spacer()
+            Text(model.signalLight.firmwareVersion ?? lang.t("settings.signalLight.firmwareVersionUnknown"))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var firmwareFilePickerRow: some View {
+        HStack {
+            if let selectedFirmwareURL {
+                Text(selectedFirmwareURL.lastPathComponent)
+                Spacer()
+                Button(lang.t("settings.signalLight.firmwareChangeFile")) {
+                    presentFirmwarePicker()
+                }
+                .disabled(isTransferring)
+            } else {
+                Button(lang.t("settings.signalLight.firmwareChooseFile")) {
+                    presentFirmwarePicker()
+                }
+                .disabled(isTransferring)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var firmwareActionRow: some View {
+        switch model.signalLight.firmwareUpdater.state {
+        case .idle, .failed:
+            if case .failed(let reason) = model.signalLight.firmwareUpdater.state {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(lang.t("settings.signalLight.firmwareFailedPrefix") + reason)
+                        .foregroundStyle(.red)
+                    Text(lang.t("settings.signalLight.firmwareFailedReassurance"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Button(lang.t("settings.signalLight.firmwareFlash")) {
+                isShowingFlashConfirmation = true
+            }
+            .disabled(selectedFirmwareURL == nil)
+            .confirmationDialog(
+                lang.t("settings.signalLight.firmwareConfirmTitle"),
+                isPresented: $isShowingFlashConfirmation
+            ) {
+                Button(lang.t("settings.signalLight.firmwareConfirmAction"), role: .destructive) {
+                    if let selectedFirmwareURL {
+                        model.signalLight.beginFirmwareUpdate(fileURL: selectedFirmwareURL)
+                    }
+                }
+                Button(lang.t("settings.general.cancel"), role: .cancel) {}
+            } message: {
+                Text(lang.t("settings.signalLight.firmwareConfirmMessage"))
+            }
+
+        case .transferring(let sent, let total):
+            firmwareProgressRow(sent: sent, total: total)
+
+        case .finishing:
+            firmwareProgressRow(sent: nil, total: nil)
+
+        case .succeeded:
+            Text(lang.t("settings.signalLight.firmwareSucceeded"))
+                .foregroundStyle(.green)
+        }
+    }
+
+    @ViewBuilder
+    private func firmwareProgressRow(sent: Int?, total: Int?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let sent, let total, total > 0 {
+                ProgressView(value: Double(sent), total: Double(total))
+                Text("\(formattedByteCount(sent)) / \(formattedByteCount(total))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ProgressView()
+            }
+            Button(lang.t("settings.general.cancel"), role: .destructive) {
+                model.signalLight.cancelFirmwareUpdate()
+            }
+        }
+    }
+
+    private func presentFirmwarePicker() {
+        let panel = NSOpenPanel()
+        if let binType = UTType(filenameExtension: "bin") {
+            panel.allowedContentTypes = [binType]
+        }
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            selectedFirmwareURL = url
+        }
+    }
+
+    private func formattedByteCount(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
 }
 
 private struct SignalLightModeRow: View {
     let title: String
     let lang: LanguageManager
     @Binding var effect: SignalLightEffect
+    let isTestDisabled: Bool
     let onTest: (SignalLightEffect) -> Void
 
     var body: some View {
@@ -197,6 +337,7 @@ private struct SignalLightModeRow: View {
                     onTest(effect)
                 }
                 .layoutPriority(1)
+                .disabled(isTestDisabled)
             }
         }
         .padding(.vertical, 4)
