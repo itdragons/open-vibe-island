@@ -173,12 +173,15 @@ private struct SignalLightModeRow: View {
             .pickerStyle(.segmented)
             .labelsHidden()
 
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 colorToggle(.red, label: lang.t("settings.signalLight.red"))
+                    .layoutPriority(1)
                 colorToggle(.yellow, label: lang.t("settings.signalLight.yellow"))
+                    .layoutPriority(1)
                 colorToggle(.green, label: lang.t("settings.signalLight.green"))
+                    .layoutPriority(1)
 
-                Spacer()
+                Spacer(minLength: 8)
 
                 if effect.type != .solid {
                     Stepper(
@@ -187,12 +190,13 @@ private struct SignalLightModeRow: View {
                         in: 100...3000,
                         step: 100
                     )
-                    .fixedSize()
+                    .layoutPriority(0)
                 }
 
                 Button(lang.t("settings.signalLight.test")) {
                     onTest(effect)
                 }
+                .layoutPriority(1)
             }
         }
         .padding(.vertical, 4)
