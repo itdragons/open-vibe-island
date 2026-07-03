@@ -26,10 +26,15 @@ struct SignalLightDiscoveredDevice: Identifiable, Equatable {
 final class SignalLightCoordinator: NSObject {
     private static let serviceUUID = CBUUID(string: "77697364-6f6d-6761-7264-656e00000001")
     private static let commandCharacteristicUUID = CBUUID(string: "77697364-6f6d-6761-7264-656e00000002")
+    private static let otaControlCharacteristicUUID = CBUUID(string: "77697364-6f6d-6761-7264-656e00000003")
+    private static let otaDataCharacteristicUUID = CBUUID(string: "77697364-6f6d-6761-7264-656e00000004")
+    private static let infoCharacteristicUUID = CBUUID(string: "77697364-6f6d-6761-7264-656e00000005")
     private static let pairedPeripheralIDDefaultsKey = "signalLight.pairedPeripheralID"
 
     private(set) var status: SignalLightConnectionStatus = .disconnected
     private(set) var discoveredDevices: [SignalLightDiscoveredDevice] = []
+    private(set) var firmwareVersion: String?
+    let firmwareUpdater = SignalLightFirmwareUpdater()
 
     /// Supplies the effect that should currently be showing. Called right
     /// after a (re)connection completes so the light can resync to current
@@ -39,6 +44,8 @@ final class SignalLightCoordinator: NSObject {
     @ObservationIgnored private var centralManager: CBCentralManager?
     @ObservationIgnored private var connectedPeripheral: CBPeripheral?
     @ObservationIgnored private var commandCharacteristic: CBCharacteristic?
+    @ObservationIgnored private var otaControlCharacteristic: CBCharacteristic?
+    @ObservationIgnored private var otaDataCharacteristic: CBCharacteristic?
     @ObservationIgnored private var discoveredPeripherals: [UUID: CBPeripheral] = [:]
 
     override init() {
@@ -89,6 +96,26 @@ final class SignalLightCoordinator: NSObject {
         }
         let command = SignalLightCommandEncoder.encode(effect)
         peripheral.writeValue(Data(command.utf8), for: characteristic, type: .withResponse)
+    }
+
+    func beginFirmwareUpdate(fileURL: URL) {
+        guard let peripheral = connectedPeripheral,
+              let otaControlCharacteristic,
+              let otaDataCharacteristic,
+              peripheral.state == .connected else {
+            firmwareUpdater.failImmediately(SignalLightFirmwareUpdateError.notReady.errorDescription ?? "Not connected")
+            return
+        }
+        firmwareUpdater.beginUpdate(
+            fileURL: fileURL,
+            peripheral: peripheral,
+            otaControlCharacteristic: otaControlCharacteristic,
+            otaDataCharacteristic: otaDataCharacteristic
+        )
+    }
+
+    func cancelFirmwareUpdate() {
+        firmwareUpdater.cancel()
     }
 
     private func attemptAutoReconnect() {
@@ -156,6 +183,10 @@ extension SignalLightCoordinator: CBCentralManagerDelegate {
         MainActor.assumeIsolated {
             connectedPeripheral = nil
             commandCharacteristic = nil
+            otaControlCharacteristic = nil
+            otaDataCharacteristic = nil
+            firmwareVersion = nil
+            firmwareUpdater.handleUnexpectedDisconnect()
             status = .disconnected
             attemptAutoReconnect()
         }
@@ -168,19 +199,61 @@ extension SignalLightCoordinator: CBPeripheralDelegate {
             guard let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) else {
                 return
             }
-            peripheral.discoverCharacteristics([Self.commandCharacteristicUUID], for: service)
+            peripheral.discoverCharacteristics(
+                [Self.commandCharacteristicUUID, Self.otaControlCharacteristicUUID, Self.otaDataCharacteristicUUID, Self.infoCharacteristicUUID],
+                for: service
+            )
         }
     }
 
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: (any Error)?) {
         MainActor.assumeIsolated {
-            guard let characteristic = service.characteristics?.first(where: { $0.uuid == Self.commandCharacteristicUUID }) else {
+            guard let characteristics = service.characteristics else {
                 return
             }
-            commandCharacteristic = characteristic
+
+            for characteristic in characteristics {
+                switch characteristic.uuid {
+                case Self.commandCharacteristicUUID:
+                    commandCharacteristic = characteristic
+                case Self.otaControlCharacteristicUUID:
+                    otaControlCharacteristic = characteristic
+                    peripheral.setNotifyValue(true, for: characteristic)
+                case Self.otaDataCharacteristicUUID:
+                    otaDataCharacteristic = characteristic
+                case Self.infoCharacteristicUUID:
+                    peripheral.readValue(for: characteristic)
+                default:
+                    break
+                }
+            }
+
+            guard commandCharacteristic != nil else {
+                return
+            }
             status = .connected(name: peripheral.name ?? "Signal Light")
             if let effect = currentEffectProvider?() {
                 send(effect)
+            }
+        }
+    }
+
+    nonisolated func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: (any Error)?) {
+        MainActor.assumeIsolated {
+            firmwareUpdater.handleWriteResponse(for: characteristic, error: error)
+        }
+    }
+
+    nonisolated func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: (any Error)?) {
+        MainActor.assumeIsolated {
+            guard error == nil, let value = characteristic.value, let text = String(data: value, encoding: .utf8) else {
+                return
+            }
+
+            if characteristic.uuid == Self.infoCharacteristicUUID {
+                firmwareVersion = text
+            } else if characteristic.uuid == Self.otaControlCharacteristicUUID {
+                firmwareUpdater.handleControlStatusUpdate(text)
             }
         }
     }
