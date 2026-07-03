@@ -28,6 +28,7 @@ final class AppModel {
     private static let legacyIslandSessionSortDefaultsKey = "appearance.island.v8.sessionSort"
     private static let legacyCompletedStaleThresholdDefaultsKey = "appearance.island.v8.completedStaleThreshold"
     private static let appearanceProfileSettingsDefaultsKey = "appearance.island.v8.settingsProfile"
+    private static let signalLightEffectsDefaultsKey = "signalLight.effects"
 
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
@@ -49,8 +50,15 @@ final class AppModel {
             _cachedSessionBuckets = nil
             pruneAgentsGridObservationTicketsIfNeeded()
             bridgeServer.updateStateSnapshot(state)
+
+            let bucket = SignalLightBucketResolver.resolve(state)
+            if bucket != lastSentSignalLightBucket {
+                lastSentSignalLightBucket = bucket
+                signalLight.send(signalLightEffects[bucket] ?? .defaultEffect(for: bucket))
+            }
         }
     }
+    @ObservationIgnored private var lastSentSignalLightBucket: SignalLightBucket?
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
 
     /// Monotonic ticket assigned the first time a session ID shows up in the
@@ -67,6 +75,7 @@ final class AppModel {
     let discovery = SessionDiscoveryCoordinator()
     let monitoring = ProcessMonitoringCoordinator()
     let codexAppServer = CodexAppServerCoordinator()
+    let signalLight = SignalLightCoordinator()
     let updateChecker = UpdateChecker()
 
     var notchStatus: NotchStatus {
@@ -444,6 +453,15 @@ final class AppModel {
         }
     }
 
+    var signalLightEffects: [SignalLightBucket: SignalLightEffect] = AppModel.loadSignalLightEffects() {
+        didSet {
+            guard let data = try? JSONEncoder().encode(signalLightEffects) else {
+                return
+            }
+            UserDefaults.standard.set(data, forKey: Self.signalLightEffectsDefaultsKey)
+        }
+    }
+
     @ObservationIgnored
     private(set) var watchRelay: WatchNotificationRelay?
 
@@ -580,6 +598,14 @@ final class AppModel {
         )
     }
 
+    private static func loadSignalLightEffects() -> [SignalLightBucket: SignalLightEffect] {
+        if let data = UserDefaults.standard.data(forKey: signalLightEffectsDefaultsKey),
+           let decoded = try? JSONDecoder().decode([SignalLightBucket: SignalLightEffect].self, from: data) {
+            return decoded
+        }
+        return Dictionary(uniqueKeysWithValues: SignalLightBucket.allCases.map { ($0, .defaultEffect(for: $0)) })
+    }
+
     init(
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
             try TerminalJumpService().jump(to: target)
@@ -637,6 +663,12 @@ final class AppModel {
 
         hooks.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
+        }
+
+        signalLight.currentEffectProvider = { [weak self] in
+            guard let self else { return nil }
+            let bucket = SignalLightBucketResolver.resolve(self.state)
+            return self.signalLightEffects[bucket] ?? .defaultEffect(for: bucket)
         }
 
         discovery.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
