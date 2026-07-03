@@ -147,6 +147,12 @@ void setup() {
   );
   otaDataCharacteristic->setCallbacks(new OtaDataCallback());
 
+  BLECharacteristic *infoCharacteristic = service->createCharacteristic(
+    INFO_CHARACTERISTIC_UUID,
+    BLECharacteristic::PROPERTY_READ
+  );
+  infoCharacteristic->setValue(FIRMWARE_VERSION.c_str());
+
   service->start();
 
   BLEAdvertising *advertising = BLEDevice::getAdvertising();
