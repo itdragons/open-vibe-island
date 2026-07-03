@@ -257,3 +257,16 @@
 "settings.signalLight.bucket.needsAnswer" = "Needs Answer";
 "settings.signalLight.bucket.running" = "Running";
 "settings.signalLight.bucket.idle" = "Idle";
+"settings.signalLight.firmware" = "Firmware";
+"settings.signalLight.firmwareNeedsConnection" = "Connect a device first.";
+"settings.signalLight.firmwareVersion" = "Firmware Version";
+"settings.signalLight.firmwareVersionUnknown" = "Unknown";
+"settings.signalLight.firmwareChooseFile" = "Choose Firmware File…";
+"settings.signalLight.firmwareChangeFile" = "Change";
+"settings.signalLight.firmwareFlash" = "Flash Firmware";
+"settings.signalLight.firmwareConfirmTitle" = "Flash this firmware?";
+"settings.signalLight.firmwareConfirmMessage" = "Don't disconnect Bluetooth or quit the app while flashing. This can take 1-3 minutes.";
+"settings.signalLight.firmwareConfirmAction" = "Flash";
+"settings.signalLight.firmwareSucceeded" = "Flashed successfully. Device is restarting…";
+"settings.signalLight.firmwareFailedPrefix" = "Flash failed: ";
+"settings.signalLight.firmwareFailedReassurance" = "The signal light is still running its previous firmware — you can try again.";

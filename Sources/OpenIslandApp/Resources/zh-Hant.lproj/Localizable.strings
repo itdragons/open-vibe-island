@@ -256,3 +256,16 @@
 "settings.signalLight.bucket.needsAnswer" = "等待回答";
 "settings.signalLight.bucket.running" = "執行中";
 "settings.signalLight.bucket.idle" = "閒置";
+"settings.signalLight.firmware" = "韌體";
+"settings.signalLight.firmwareNeedsConnection" = "請先連接裝置。";
+"settings.signalLight.firmwareVersion" = "韌體版本";
+"settings.signalLight.firmwareVersionUnknown" = "未知";
+"settings.signalLight.firmwareChooseFile" = "選擇韌體檔案…";
+"settings.signalLight.firmwareChangeFile" = "更換";
+"settings.signalLight.firmwareFlash" = "燒錄韌體";
+"settings.signalLight.firmwareConfirmTitle" = "確定要燒錄韌體嗎？";
+"settings.signalLight.firmwareConfirmMessage" = "燒錄期間請勿中斷藍牙或關閉 App，大約需要 1-3 分鐘。";
+"settings.signalLight.firmwareConfirmAction" = "燒錄";
+"settings.signalLight.firmwareSucceeded" = "燒錄成功，裝置正在重新啟動…";
+"settings.signalLight.firmwareFailedPrefix" = "燒錄失敗：";
+"settings.signalLight.firmwareFailedReassurance" = "信號燈仍在執行先前的韌體，可以重試。";
