@@ -83,6 +83,16 @@ final class SignalLightFirmwareUpdater {
         state = .failed(reason)
     }
 
+    /// Resets a stale `.succeeded` state back to `.idle` — called by the
+    /// coordinator whenever a device (re)connects, since a successful
+    /// reconnect is the natural point where "the last flash succeeded"
+    /// should stop being shown and normal operation (including a possible
+    /// next flash) resumes. No-ops in every other state.
+    func acknowledgeSuccess() {
+        guard case .succeeded = state else { return }
+        state = .idle
+    }
+
     /// Best-effort abort: tells the firmware to abandon the OTA write and
     /// unblocks whatever the transfer loop is currently awaiting.
     func cancel() {

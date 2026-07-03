@@ -232,6 +232,7 @@ extension SignalLightCoordinator: CBPeripheralDelegate {
                 return
             }
             status = .connected(name: peripheral.name ?? "Signal Light")
+            firmwareUpdater.acknowledgeSuccess()
             if let effect = currentEffectProvider?() {
                 send(effect)
             }
