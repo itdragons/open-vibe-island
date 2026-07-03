@@ -217,7 +217,16 @@ struct SignalLightSettingsPane: View {
     @ViewBuilder
     private var firmwareActionRow: some View {
         switch model.signalLight.firmwareUpdater.state {
-        case .idle:
+        case .idle, .failed:
+            if case .failed(let reason) = model.signalLight.firmwareUpdater.state {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(lang.t("settings.signalLight.firmwareFailedPrefix") + reason)
+                        .foregroundStyle(.red)
+                    Text(lang.t("settings.signalLight.firmwareFailedReassurance"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Button(lang.t("settings.signalLight.firmwareFlash")) {
                 isShowingFlashConfirmation = true
             }
@@ -245,15 +254,6 @@ struct SignalLightSettingsPane: View {
         case .succeeded:
             Text(lang.t("settings.signalLight.firmwareSucceeded"))
                 .foregroundStyle(.green)
-
-        case .failed(let reason):
-            VStack(alignment: .leading, spacing: 4) {
-                Text(lang.t("settings.signalLight.firmwareFailedPrefix") + reason)
-                    .foregroundStyle(.red)
-                Text(lang.t("settings.signalLight.firmwareFailedReassurance"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 
