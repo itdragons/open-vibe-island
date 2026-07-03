@@ -106,6 +106,8 @@ cat > "$bundle_dir/Contents/Info.plist" <<EOF
     <string>14.0</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>Open Island needs automation access to focus Terminal and iTerm sessions for jump-back.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Open Island uses Bluetooth to connect to your optional signal light device.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>
