@@ -194,6 +194,7 @@ private struct SignalLightModeRow: View {
                     guard !effect.colors.contains(color) else { return }
                     effect.colors.append(color)
                 } else {
+                    guard effect.colors.count > 1 else { return }
                     effect.colors.removeAll { $0 == color }
                 }
             }

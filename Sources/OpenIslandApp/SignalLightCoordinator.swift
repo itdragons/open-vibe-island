@@ -88,7 +88,7 @@ final class SignalLightCoordinator: NSObject {
             return
         }
         let command = SignalLightCommandEncoder.encode(effect)
-        peripheral.writeValue(Data(command.utf8), for: characteristic, type: .withoutResponse)
+        peripheral.writeValue(Data(command.utf8), for: characteristic, type: .withResponse)
     }
 
     private func attemptAutoReconnect() {
