@@ -20,7 +20,7 @@ struct SignalLightDiscoveredDevice: Identifiable, Equatable {
 /// Owns the BLE connection to a single paired signal-light device: scanning,
 /// connecting, disconnecting, auto-reconnecting after drops, and sending
 /// effect commands. Talks directly to the peripheral defined in
-/// `signal-light/led/led.ino` / `signal-light/led/config.h`.
+/// `signal-light/led_esp32c3/led_esp32c3.ino` / `signal-light/led_esp32c3/config.h`.
 @MainActor
 @Observable
 final class SignalLightCoordinator: NSObject {

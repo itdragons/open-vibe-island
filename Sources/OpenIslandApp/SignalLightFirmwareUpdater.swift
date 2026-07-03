@@ -30,7 +30,7 @@ enum SignalLightFirmwareUpdateError: LocalizedError {
 }
 
 /// Drives a BLE OTA firmware flash over the signal light's existing
-/// `OTA_CONTROL`/`OTA_DATA` characteristics (see `signal-light/led/led.ino`).
+/// `OTA_CONTROL`/`OTA_DATA` characteristics (see `signal-light/led_esp32c3/led_esp32c3.ino`).
 /// Owns only the transfer state machine; `SignalLightCoordinator` owns the
 /// actual CoreBluetooth session and forwards it the delegate callbacks this
 /// type needs.
