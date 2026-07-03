@@ -5,22 +5,24 @@ import OpenIslandCore
 struct SignalLightSettingsPane: View {
     var model: AppModel
 
+    private var lang: LanguageManager { model.lang }
+
     var body: some View {
         Form {
             deviceSection
             modesSection
         }
         .formStyle(.grouped)
-        .navigationTitle("Signal Light")
+        .navigationTitle(lang.t("settings.tab.signalLight"))
     }
 
     // MARK: Device
 
     @ViewBuilder
     private var deviceSection: some View {
-        Section("Device") {
+        Section(lang.t("settings.signalLight.device")) {
             HStack {
-                Label("Status", systemImage: "light.beacon.max.fill")
+                Label(lang.t("settings.signalLight.status"), systemImage: "light.beacon.max.fill")
                 Spacer()
                 statusBadge
             }
@@ -29,16 +31,16 @@ struct SignalLightSettingsPane: View {
             case .unauthorized:
                 unauthorizedBanner
             case .poweredOff:
-                Text("Turn on Bluetooth to search for a signal light.")
+                Text(lang.t("settings.signalLight.turnOnBluetooth"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             case .connected:
-                Button("Disconnect", role: .destructive) {
+                Button(lang.t("settings.signalLight.disconnect"), role: .destructive) {
                     model.signalLight.disconnect()
                 }
             default:
                 discoveredDevicesList
-                Button("Scan") {
+                Button(lang.t("settings.signalLight.scan")) {
                     model.signalLight.startScan()
                 }
             }
@@ -60,20 +62,20 @@ struct SignalLightSettingsPane: View {
         case .scanning:
             HStack(spacing: 4) {
                 ProgressView().controlSize(.small)
-                Text("Scanning…")
+                Text(lang.t("settings.signalLight.scanning"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         case .disconnected:
-            Text("Not connected")
+            Text(lang.t("settings.signalLight.notConnected"))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         case .poweredOff:
-            Text("Bluetooth off")
+            Text(lang.t("settings.signalLight.bluetoothOff"))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         case .unauthorized:
-            Text("Permission needed")
+            Text(lang.t("settings.signalLight.permissionNeeded"))
                 .font(.caption)
                 .foregroundStyle(.orange)
         }
@@ -82,10 +84,10 @@ struct SignalLightSettingsPane: View {
     @ViewBuilder
     private var unauthorizedBanner: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Open Island needs Bluetooth permission to find your signal light.")
+            Text(lang.t("settings.signalLight.permissionExplanation"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Button("Open Bluetooth Settings") {
+            Button(lang.t("settings.signalLight.openBluetoothSettings")) {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth") {
                     NSWorkspace.shared.open(url)
                 }
@@ -96,7 +98,7 @@ struct SignalLightSettingsPane: View {
     @ViewBuilder
     private var discoveredDevicesList: some View {
         if model.signalLight.discoveredDevices.isEmpty {
-            Text(model.signalLight.status == .scanning ? "Searching…" : "No devices found yet.")
+            Text(model.signalLight.status == .scanning ? lang.t("settings.signalLight.searching") : lang.t("settings.signalLight.noDevicesFound"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else {
@@ -104,7 +106,7 @@ struct SignalLightSettingsPane: View {
                 HStack {
                     Text(device.name)
                     Spacer()
-                    Button("Connect") {
+                    Button(lang.t("settings.signalLight.connect")) {
                         model.signalLight.connect(deviceID: device.id)
                     }
                 }
@@ -116,10 +118,11 @@ struct SignalLightSettingsPane: View {
 
     @ViewBuilder
     private var modesSection: some View {
-        Section("Modes") {
+        Section {
             ForEach(SignalLightBucket.allCases, id: \.self) { bucket in
                 SignalLightModeRow(
                     title: bucketTitle(bucket),
+                    lang: lang,
                     effect: Binding(
                         get: { model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket) },
                         set: { model.signalLightEffects[bucket] = $0 }
@@ -129,21 +132,30 @@ struct SignalLightSettingsPane: View {
                     }
                 )
             }
+
+            Button(lang.t("settings.signalLight.resetDefaults")) {
+                model.signalLightEffects = Dictionary(
+                    uniqueKeysWithValues: SignalLightBucket.allCases.map { ($0, .defaultEffect(for: $0)) }
+                )
+            }
+        } header: {
+            Text(lang.t("settings.signalLight.modes"))
         }
     }
 
     private func bucketTitle(_ bucket: SignalLightBucket) -> String {
         switch bucket {
-        case .needsApproval: "Needs Approval"
-        case .needsAnswer: "Needs Answer"
-        case .running: "Running"
-        case .idle: "Idle"
+        case .needsApproval: lang.t("settings.signalLight.bucket.needsApproval")
+        case .needsAnswer: lang.t("settings.signalLight.bucket.needsAnswer")
+        case .running: lang.t("settings.signalLight.bucket.running")
+        case .idle: lang.t("settings.signalLight.bucket.idle")
         }
     }
 }
 
 private struct SignalLightModeRow: View {
     let title: String
+    let lang: LanguageManager
     @Binding var effect: SignalLightEffect
     let onTest: (SignalLightEffect) -> Void
 
@@ -152,19 +164,19 @@ private struct SignalLightModeRow: View {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
 
-            Picker("Effect", selection: $effect.type) {
-                Text("Solid").tag(SignalLightEffectType.solid)
-                Text("Blink").tag(SignalLightEffectType.blink)
-                Text("Cycle").tag(SignalLightEffectType.cycle)
-                Text("Breathe").tag(SignalLightEffectType.breathe)
+            Picker(lang.t("settings.signalLight.effect"), selection: $effect.type) {
+                Text(lang.t("settings.signalLight.solid")).tag(SignalLightEffectType.solid)
+                Text(lang.t("settings.signalLight.blink")).tag(SignalLightEffectType.blink)
+                Text(lang.t("settings.signalLight.cycle")).tag(SignalLightEffectType.cycle)
+                Text(lang.t("settings.signalLight.breathe")).tag(SignalLightEffectType.breathe)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
 
             HStack(spacing: 12) {
-                colorToggle(.red, label: "Red")
-                colorToggle(.yellow, label: "Yellow")
-                colorToggle(.green, label: "Green")
+                colorToggle(.red, label: lang.t("settings.signalLight.red"))
+                colorToggle(.yellow, label: lang.t("settings.signalLight.yellow"))
+                colorToggle(.green, label: lang.t("settings.signalLight.green"))
 
                 Spacer()
 
@@ -178,7 +190,7 @@ private struct SignalLightModeRow: View {
                     .fixedSize()
                 }
 
-                Button("Test") {
+                Button(lang.t("settings.signalLight.test")) {
                     onTest(effect)
                 }
             }

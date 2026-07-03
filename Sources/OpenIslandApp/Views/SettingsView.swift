@@ -26,7 +26,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .display:    lang.t("settings.tab.display")
         case .sound:      lang.t("settings.tab.sound")
         case .watch:      "Watch"
-        case .signalLight: "Signal Light"
+        case .signalLight: lang.t("settings.tab.signalLight")
         case .shortcuts:  lang.t("settings.tab.shortcuts")
         case .lab:        lang.t("settings.tab.lab")
         case .about:      lang.t("settings.tab.about")

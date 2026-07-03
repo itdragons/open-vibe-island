@@ -225,3 +225,35 @@
 
 /* Window Titles */
 "window.settings" = "Open Island Settings";
+
+/* Signal Light */
+"settings.tab.signalLight" = "Signal Light";
+"settings.signalLight.device" = "Device";
+"settings.signalLight.status" = "Status";
+"settings.signalLight.turnOnBluetooth" = "Turn on Bluetooth to search for a signal light.";
+"settings.signalLight.disconnect" = "Disconnect";
+"settings.signalLight.scan" = "Scan";
+"settings.signalLight.scanning" = "Scanning…";
+"settings.signalLight.notConnected" = "Not connected";
+"settings.signalLight.bluetoothOff" = "Bluetooth off";
+"settings.signalLight.permissionNeeded" = "Permission needed";
+"settings.signalLight.permissionExplanation" = "Open Island needs Bluetooth permission to find your signal light.";
+"settings.signalLight.openBluetoothSettings" = "Open Bluetooth Settings";
+"settings.signalLight.searching" = "Searching…";
+"settings.signalLight.noDevicesFound" = "No devices found yet.";
+"settings.signalLight.connect" = "Connect";
+"settings.signalLight.modes" = "Modes";
+"settings.signalLight.resetDefaults" = "Reset to Defaults";
+"settings.signalLight.effect" = "Effect";
+"settings.signalLight.solid" = "Solid";
+"settings.signalLight.blink" = "Blink";
+"settings.signalLight.cycle" = "Cycle";
+"settings.signalLight.breathe" = "Breathe";
+"settings.signalLight.red" = "Red";
+"settings.signalLight.yellow" = "Yellow";
+"settings.signalLight.green" = "Green";
+"settings.signalLight.test" = "Test";
+"settings.signalLight.bucket.needsApproval" = "Needs Approval";
+"settings.signalLight.bucket.needsAnswer" = "Needs Answer";
+"settings.signalLight.bucket.running" = "Running";
+"settings.signalLight.bucket.idle" = "Idle";

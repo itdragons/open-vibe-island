@@ -224,3 +224,35 @@
 
 /* Window Titles */
 "window.settings" = "Open Island 設定";
+
+/* Signal Light */
+"settings.tab.signalLight" = "信號燈";
+"settings.signalLight.device" = "裝置";
+"settings.signalLight.status" = "狀態";
+"settings.signalLight.turnOnBluetooth" = "請打開藍牙以搜尋信號燈裝置。";
+"settings.signalLight.disconnect" = "斷開連線";
+"settings.signalLight.scan" = "掃描";
+"settings.signalLight.scanning" = "掃描中…";
+"settings.signalLight.notConnected" = "未連線";
+"settings.signalLight.bluetoothOff" = "藍牙已關閉";
+"settings.signalLight.permissionNeeded" = "需要授權";
+"settings.signalLight.permissionExplanation" = "Open Island 需要藍牙權限才能找到你的信號燈裝置。";
+"settings.signalLight.openBluetoothSettings" = "打開藍牙設定";
+"settings.signalLight.searching" = "搜尋中…";
+"settings.signalLight.noDevicesFound" = "尚未發現裝置。";
+"settings.signalLight.connect" = "連線";
+"settings.signalLight.modes" = "模式";
+"settings.signalLight.resetDefaults" = "恢復預設";
+"settings.signalLight.effect" = "效果";
+"settings.signalLight.solid" = "常亮";
+"settings.signalLight.blink" = "閃爍";
+"settings.signalLight.cycle" = "依序交替";
+"settings.signalLight.breathe" = "呼吸";
+"settings.signalLight.red" = "紅";
+"settings.signalLight.yellow" = "黃";
+"settings.signalLight.green" = "綠";
+"settings.signalLight.test" = "測試";
+"settings.signalLight.bucket.needsApproval" = "等待審批";
+"settings.signalLight.bucket.needsAnswer" = "等待回答";
+"settings.signalLight.bucket.running" = "執行中";
+"settings.signalLight.bucket.idle" = "閒置";
