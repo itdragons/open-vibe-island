@@ -12,6 +12,7 @@ struct SignalLightSettingsPane: View {
     @State private var isShowingRenameReconnectNotice = false
     @State private var wizard: SignalLightCalibrationWizard?
     @State private var isDeviceManagementExpanded = false
+    @State private var testTimeoutTask: Task<Void, Never>?
 
     private var lang: LanguageManager { model.lang }
 
@@ -135,6 +136,12 @@ struct SignalLightSettingsPane: View {
                     isTestDisabled: isTransferring,
                     onTest: { effect in
                         model.signalLight.send(effect)
+                        testTimeoutTask?.cancel()
+                        testTimeoutTask = Task {
+                            try? await Task.sleep(for: .seconds(5))
+                            guard !Task.isCancelled else { return }
+                            resyncLightSwitchState()
+                        }
                     }
                 )
             }
@@ -385,7 +392,7 @@ struct SignalLightSettingsPane: View {
             model.signalLight.sendRaw(SignalLightControlCommand.setPin(color: color, pin: pin))
         }
         if finished.unresolvedColors.isEmpty {
-            model.signalLight.send(SignalLightEffect(type: .cycle, colors: [.red, .yellow, .green], intervalMs: 200))
+            model.signalLight.send(SignalLightEffect(type: .cycle, colors: [.green, .yellow, .red], intervalMs: 200))
         }
     }
 
@@ -430,9 +437,9 @@ struct SignalLightSettingsPane: View {
                     .foregroundStyle(.secondary)
 
                 HStack(spacing: 8) {
-                    Button(lang.t("settings.signalLight.red")) { recordCalibrationObservation(.red) }
-                    Button(lang.t("settings.signalLight.yellow")) { recordCalibrationObservation(.yellow) }
                     Button(lang.t("settings.signalLight.green")) { recordCalibrationObservation(.green) }
+                    Button(lang.t("settings.signalLight.yellow")) { recordCalibrationObservation(.yellow) }
+                    Button(lang.t("settings.signalLight.red")) { recordCalibrationObservation(.red) }
                     Button(lang.t("settings.signalLight.calibrateNothing")) { recordCalibrationObservation(.nothing) }
                 }
 
@@ -510,11 +517,11 @@ private struct SignalLightModeRow: View {
             .labelsHidden()
 
             HStack(spacing: 10) {
-                colorToggle(.red, label: lang.t("settings.signalLight.red"))
+                colorToggle(.green, label: lang.t("settings.signalLight.green"))
                     .layoutPriority(1)
                 colorToggle(.yellow, label: lang.t("settings.signalLight.yellow"))
                     .layoutPriority(1)
-                colorToggle(.green, label: lang.t("settings.signalLight.green"))
+                colorToggle(.red, label: lang.t("settings.signalLight.red"))
                     .layoutPriority(1)
 
                 Spacer(minLength: 8)
