@@ -11,6 +11,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case sound
     case appearance
     case watch
+    case signalLight
     case shortcuts
     case lab
     case about
@@ -25,6 +26,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .display:    lang.t("settings.tab.display")
         case .sound:      lang.t("settings.tab.sound")
         case .watch:      "Watch"
+        case .signalLight: lang.t("settings.tab.signalLight")
         case .shortcuts:  lang.t("settings.tab.shortcuts")
         case .lab:        lang.t("settings.tab.lab")
         case .about:      lang.t("settings.tab.about")
@@ -39,6 +41,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .display:    "textformat.size"
         case .sound:      "speaker.wave.2.fill"
         case .watch:      "applewatch"
+        case .signalLight: "light.beacon.max.fill"
         case .shortcuts:  "keyboard.fill"
         case .lab:        "flask.fill"
         case .about:      "info.circle.fill"
@@ -53,6 +56,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .display:    .blue
         case .sound:      .green
         case .watch:      .cyan
+        case .signalLight: .yellow
         case .shortcuts:  .gray
         case .lab:        .pink
         case .about:      .blue
@@ -61,8 +65,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var section: SettingsSection {
         switch self {
-        case .general, .setup, .display, .sound, .appearance, .watch: .system
-        case .shortcuts, .lab:                                        .advanced
+        case .general, .setup, .display, .sound, .appearance, .watch, .signalLight: .system
+        case .shortcuts, .lab:                                                      .advanced
         case .about:                                                  .app
         }
     }
@@ -148,6 +152,8 @@ struct SettingsView: View {
                 SoundSettingsPane(model: model)
             case .watch:
                 WatchSettingsPane(model: model)
+            case .signalLight:
+                SignalLightSettingsPane(model: model)
             case .shortcuts:
                 PlaceholderSettingsPane(model: model, titleKey: "settings.tab.shortcuts", subtitleKey: "settings.shortcuts.comingSoon")
             case .lab:
