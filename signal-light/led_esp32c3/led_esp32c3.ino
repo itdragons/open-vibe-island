@@ -80,6 +80,9 @@ size_t otaExpectedSize = UPDATE_SIZE_UNKNOWN;
 size_t otaWrittenBytes = 0;
 unsigned long restartAtMs = 0;
 
+bool restartAfterRename = false;
+unsigned long restartAfterRenameAtMs = 0;
+
 void handleCommand(String cmd);
 void handleOtaControl(String cmd);
 void handleOtaData(BLECharacteristic *characteristic);
@@ -95,6 +98,7 @@ void handleSetPinCommand(String cmd);
 void sendConfigStatus();
 void handlePinTestCommand(String cmd);
 void endPinTestIfExpired(unsigned long nowMs);
+void handleSetNameCommand(String cmd);
 
 class ServerCallback : public BLEServerCallbacks {
   void onDisconnect(BLEServer *server) {
@@ -206,6 +210,10 @@ void setup() {
 
 void loop() {
   if (restartAfterOta && millis() >= restartAtMs) {
+    ESP.restart();
+  }
+
+  if (restartAfterRename && millis() >= restartAfterRenameAtMs) {
     ESP.restart();
   }
 
@@ -439,6 +447,8 @@ void animateCustomEffect(unsigned long nowMs) {
 }
 
 void handleCommand(String cmd) {
+  String original = cmd;
+  original.trim();
   cmd.trim();
   cmd.toUpperCase();
 
@@ -463,6 +473,11 @@ void handleCommand(String cmd) {
 
   if (cmd.startsWith("PINTEST:")) {
     handlePinTestCommand(cmd);
+    return;
+  }
+
+  if (cmd.startsWith("SETNAME:")) {
+    handleSetNameCommand(original);
     return;
   }
 
@@ -823,4 +838,26 @@ void endPinTestIfExpired(unsigned long nowMs) {
   pinTestActivePin = -1;
   lightOn = pinTestPriorLightOn;
   currentMode = pinTestPriorMode;
+}
+
+void handleSetNameCommand(String cmd) {
+  // Format: SETNAME:<name> — `cmd` here is the ORIGINAL (non-uppercased)
+  // command text so the chosen name keeps its case.
+  int firstColon = cmd.indexOf(':');
+  if (firstColon < 0) {
+    setOtaStatus("SETNAME failed: malformed command");
+    return;
+  }
+
+  String newName = cmd.substring(firstColon + 1);
+  newName.trim();
+  if (newName.length() == 0) {
+    setOtaStatus("SETNAME failed: empty name");
+    return;
+  }
+
+  prefs.putString("bleName", newName);
+  setOtaStatus("SETNAME ok, restarting");
+  restartAfterRename = true;
+  restartAfterRenameAtMs = millis() + 3000;
 }
