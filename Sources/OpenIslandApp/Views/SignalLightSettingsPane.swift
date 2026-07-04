@@ -547,21 +547,26 @@ private struct SignalLightModeRow: View {
         .padding(.vertical, 4)
     }
 
+    @ViewBuilder
     private func colorToggle(_ color: SignalLightColor, label: String) -> some View {
-        Toggle(label, isOn: Binding(
-            get: { effect.colors.contains(color) },
-            set: { isOn in
-                if isOn {
-                    guard !effect.colors.contains(color) else { return }
-                    effect.colors.append(color)
-                } else {
-                    guard effect.colors.count > 1 else { return }
-                    effect.colors.removeAll { $0 == color }
-                }
+        let isSelected = effect.colors.contains(color)
+        let action = {
+            if isSelected {
+                guard effect.colors.count > 1 else { return }
+                effect.colors.removeAll { $0 == color }
+            } else {
+                guard !effect.colors.contains(color) else { return }
+                effect.colors.append(color)
             }
-        ))
-        .toggleStyle(.button)
-        .tint(uiColor(for: color))
+        }
+        
+        if isSelected {
+            Button(label, action: action)
+                .buttonStyle(.borderedProminent)
+                .tint(uiColor(for: color))
+        } else {
+            Button(label, action: action)
+        }
     }
 
     private func uiColor(for color: SignalLightColor) -> Color {
