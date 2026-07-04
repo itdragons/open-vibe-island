@@ -3,12 +3,23 @@
 #include <BLEUtils.h>
 #include <BLE2902.h>
 #include <Update.h>
+#include <Preferences.h>
 #include "config.h"
 
 
 // ESP32-C3 Super Mini supports BLE, but not BluetoothSerial.
 // Use the BLE device named C3_LED to control the lights and send firmware OTA.
 
+
+Preferences prefs;
+
+// Runtime pin assignment and BLE name — loaded from NVS in setup(), falling
+// back to the config.h defaults on a fresh chip. Reassignable at runtime via
+// SETPIN/SETNAME without reflashing.
+int led_red = DEFAULT_LED_RED;
+int led_yellow = DEFAULT_LED_YELLOW;
+int led_green = DEFAULT_LED_GREEN;
+String bleName;
 
 bool lightOn = true;
 
@@ -69,6 +80,7 @@ bool isCommand(String cmd, String a, String b = "", String c = "", String d = ""
 void handleEffectCommand(String cmd);
 void animateCustomEffect(unsigned long nowMs);
 void applyCustomEffectValue(int &red, int &yellow, int &green, int onValue, int activeIndex);
+bool isSafeGpioPin(int pin);
 
 class ServerCallback : public BLEServerCallbacks {
   void onDisconnect(BLEServer *server) {
@@ -108,6 +120,21 @@ void setup() {
   Serial.println("============================");
   Serial.println("C3 LED starting...");
 
+  prefs.begin("wglight", false);
+  led_red = prefs.getInt("pinRed", DEFAULT_LED_RED);
+  led_yellow = prefs.getInt("pinYellow", DEFAULT_LED_YELLOW);
+  led_green = prefs.getInt("pinGreen", DEFAULT_LED_GREEN);
+  bleName = prefs.getString("bleName", "");
+  if (bleName.length() == 0) {
+    uint64_t chipId = ESP.getEfuseMac();
+    char suffix[5];
+    snprintf(suffix, sizeof(suffix), "%04X", (uint16_t)(chipId & 0xFFFF));
+    bleName = BLE_NAME_PREFIX + String(suffix);
+    prefs.putString("bleName", bleName);
+  }
+  Serial.println("Pins -> R:" + String(led_red) + " Y:" + String(led_yellow) + " G:" + String(led_green));
+  Serial.println("BLE name -> " + bleName);
+
   pinMode(led_green, OUTPUT);
   pinMode(led_red, OUTPUT);
   pinMode(led_yellow, OUTPUT);
@@ -115,7 +142,7 @@ void setup() {
 
   showManualLights();
 
-  BLEDevice::init(BLE_DEVICE_NAME.c_str());
+  BLEDevice::init(bleName.c_str());
   BLEDevice::setMTU(517);
 
   BLEServer *server = BLEDevice::createServer();
@@ -449,7 +476,7 @@ void handleCommand(String cmd) {
   }
 
   if (cmd == "BLE") {
-    Serial.println("Bluetooth Name: " + BLE_DEVICE_NAME);
+    Serial.println("Bluetooth Name: " + bleName);
     return;
   }
 
@@ -632,4 +659,13 @@ void setOtaStatus(const String &message) {
 
 bool isCommand(String cmd, String a, String b, String c, String d) {
   return cmd == a || cmd == b || cmd == c || cmd == d;
+}
+
+bool isSafeGpioPin(int pin) {
+  for (int i = 0; i < SAFE_GPIO_PIN_COUNT; i++) {
+    if (SAFE_GPIO_PINS[i] == pin) {
+      return true;
+    }
+  }
+  return false;
 }
