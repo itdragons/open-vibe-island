@@ -536,5 +536,6 @@ private struct SignalLightModeRow: View {
             }
         ))
         .toggleStyle(.button)
+        .buttonStyle(.plain)
     }
 }
