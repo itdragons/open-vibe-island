@@ -270,3 +270,16 @@
 "settings.signalLight.firmwareSucceeded" = "刷写成功，设备正在重启…";
 "settings.signalLight.firmwareFailedPrefix" = "刷写失败：";
 "settings.signalLight.firmwareFailedReassurance" = "信号灯仍在运行之前的固件，可以重试。";
+"settings.signalLight.lightSwitch" = "灯光开关";
+"settings.signalLight.renamePlaceholder" = "新名称";
+"settings.signalLight.rename" = "重命名";
+"settings.signalLight.renameReconnecting" = "设备正在重启并重新连接…";
+"settings.signalLight.brightness" = "亮度";
+"settings.signalLight.calibrateWiring" = "校准接线";
+"settings.signalLight.calibrateTitle" = "接线校准";
+"settings.signalLight.calibrateAsking" = "刚才亮起的是哪个颜色？";
+"settings.signalLight.calibrateNothing" = "都没有";
+"settings.signalLight.calibrateSucceeded" = "校准完成，三种颜色已全部识别。";
+"settings.signalLight.calibrateNotFoundPrefix" = "未能识别：";
+"settings.signalLight.calibrateRedo" = "重新开始";
+"settings.signalLight.calibrateDone" = "完成";

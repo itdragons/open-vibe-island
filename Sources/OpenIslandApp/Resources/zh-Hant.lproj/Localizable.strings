@@ -269,3 +269,16 @@
 "settings.signalLight.firmwareSucceeded" = "燒錄成功，裝置正在重新啟動…";
 "settings.signalLight.firmwareFailedPrefix" = "燒錄失敗：";
 "settings.signalLight.firmwareFailedReassurance" = "信號燈仍在執行先前的韌體，可以重試。";
+"settings.signalLight.lightSwitch" = "燈光開關";
+"settings.signalLight.renamePlaceholder" = "新名稱";
+"settings.signalLight.rename" = "重新命名";
+"settings.signalLight.renameReconnecting" = "裝置正在重新啟動並重新連線…";
+"settings.signalLight.brightness" = "亮度";
+"settings.signalLight.calibrateWiring" = "校準接線";
+"settings.signalLight.calibrateTitle" = "接線校準";
+"settings.signalLight.calibrateAsking" = "剛才亮起的是哪個顏色？";
+"settings.signalLight.calibrateNothing" = "都沒有";
+"settings.signalLight.calibrateSucceeded" = "校準完成，三種顏色已全部識別。";
+"settings.signalLight.calibrateNotFoundPrefix" = "未能識別：";
+"settings.signalLight.calibrateRedo" = "重新開始";
+"settings.signalLight.calibrateDone" = "完成";
