@@ -241,7 +241,6 @@
 "settings.signalLight.searching" = "搜尋中…";
 "settings.signalLight.noDevicesFound" = "尚未發現裝置。";
 "settings.signalLight.connect" = "連線";
-"settings.signalLight.modes" = "模式";
 "settings.signalLight.resetDefaults" = "恢復預設";
 "settings.signalLight.effect" = "效果";
 "settings.signalLight.solid" = "常亮";
@@ -256,7 +255,6 @@
 "settings.signalLight.bucket.needsAnswer" = "等待回答";
 "settings.signalLight.bucket.running" = "執行中";
 "settings.signalLight.bucket.idle" = "閒置";
-"settings.signalLight.firmware" = "韌體";
 "settings.signalLight.firmwareNeedsConnection" = "請先連接裝置。";
 "settings.signalLight.firmwareVersion" = "韌體版本";
 "settings.signalLight.firmwareVersionUnknown" = "未知";
@@ -273,7 +271,6 @@
 "settings.signalLight.renamePlaceholder" = "新名稱";
 "settings.signalLight.rename" = "重新命名";
 "settings.signalLight.renameReconnecting" = "裝置正在重新啟動並重新連線…";
-"settings.signalLight.brightness" = "亮度";
 "settings.signalLight.calibrateWiring" = "校準接線";
 "settings.signalLight.calibrateTitle" = "接線校準";
 "settings.signalLight.calibrateAsking" = "剛才亮起的是哪個顏色？";
