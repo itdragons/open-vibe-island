@@ -242,7 +242,6 @@
 "settings.signalLight.searching" = "Searching…";
 "settings.signalLight.noDevicesFound" = "No devices found yet.";
 "settings.signalLight.connect" = "Connect";
-"settings.signalLight.modes" = "Modes";
 "settings.signalLight.resetDefaults" = "Reset to Defaults";
 "settings.signalLight.effect" = "Effect";
 "settings.signalLight.solid" = "Solid";
@@ -257,7 +256,6 @@
 "settings.signalLight.bucket.needsAnswer" = "Needs Answer";
 "settings.signalLight.bucket.running" = "Running";
 "settings.signalLight.bucket.idle" = "Idle";
-"settings.signalLight.firmware" = "Firmware";
 "settings.signalLight.firmwareNeedsConnection" = "Connect a device first.";
 "settings.signalLight.firmwareVersion" = "Firmware Version";
 "settings.signalLight.firmwareVersionUnknown" = "Unknown";
@@ -274,7 +272,6 @@
 "settings.signalLight.renamePlaceholder" = "New name";
 "settings.signalLight.rename" = "Rename";
 "settings.signalLight.renameReconnecting" = "Device is restarting and reconnecting…";
-"settings.signalLight.brightness" = "Brightness";
 "settings.signalLight.calibrateWiring" = "Calibrate Wiring";
 "settings.signalLight.calibrateTitle" = "Wiring Calibration";
 "settings.signalLight.calibrateAsking" = "Which color just lit up?";
@@ -283,3 +280,5 @@
 "settings.signalLight.calibrateNotFoundPrefix" = "Couldn't identify: ";
 "settings.signalLight.calibrateRedo" = "Start Over";
 "settings.signalLight.calibrateDone" = "Done";
+"settings.signalLight.lightSection" = "Light";
+"settings.signalLight.deviceManagement" = "Device Management";
