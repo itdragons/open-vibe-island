@@ -96,3 +96,65 @@ struct SignalLightCommandEncoderTests {
         #expect(SignalLightCommandEncoder.decode("NOT_EFFECT:SOLID:G:0") == nil)
     }
 }
+
+struct SignalLightControlCommandTests {
+    @Test
+    func encodesPinTestOn() {
+        #expect(SignalLightControlCommand.pinTest(pin: 10, on: true) == "PINTEST:10:1")
+    }
+
+    @Test
+    func encodesPinTestOff() {
+        #expect(SignalLightControlCommand.pinTest(pin: 10, on: false) == "PINTEST:10:0")
+    }
+
+    @Test
+    func encodesSetPin() {
+        #expect(SignalLightControlCommand.setPin(color: .red, pin: 5) == "SETPIN:R:5")
+    }
+
+    @Test
+    func encodesSetName() {
+        #expect(SignalLightControlCommand.setName("MyOffice") == "SETNAME:MyOffice")
+    }
+
+    @Test
+    func encodesBrightness() {
+        #expect(SignalLightControlCommand.brightness(percent: 42) == "BRIGHTNESS:42")
+    }
+
+    @Test
+    func exposesGetConfigAndOffAsFixedStrings() {
+        #expect(SignalLightControlCommand.getConfig == "GETCONFIG")
+        #expect(SignalLightControlCommand.off == "OFF")
+    }
+}
+
+struct SignalLightConfigDecoderTests {
+    @Test
+    func decodesAWellFormedConfigLine() {
+        let config = SignalLightConfigDecoder.decode("CONFIG:R=5,Y=6,G=7,NAME=WG-A1B2")
+        #expect(config == SignalLightDeviceConfig(pins: [.red: 5, .yellow: 6, .green: 7], name: "WG-A1B2"))
+    }
+
+    @Test
+    func decodesRegardlessOfFieldOrder() {
+        let config = SignalLightConfigDecoder.decode("CONFIG:NAME=WG-A1B2,G=7,R=5,Y=6")
+        #expect(config == SignalLightDeviceConfig(pins: [.red: 5, .yellow: 6, .green: 7], name: "WG-A1B2"))
+    }
+
+    @Test
+    func rejectsMissingPrefix() {
+        #expect(SignalLightConfigDecoder.decode("R=5,Y=6,G=7,NAME=WG-A1B2") == nil)
+    }
+
+    @Test
+    func rejectsMissingFields() {
+        #expect(SignalLightConfigDecoder.decode("CONFIG:R=5,Y=6,NAME=WG-A1B2") == nil)
+    }
+
+    @Test
+    func rejectsUnrelatedStatusText() {
+        #expect(SignalLightConfigDecoder.decode("SETPIN ok: R=5") == nil)
+    }
+}

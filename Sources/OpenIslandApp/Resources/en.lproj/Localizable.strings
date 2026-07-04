@@ -270,3 +270,16 @@
 "settings.signalLight.firmwareSucceeded" = "Flashed successfully. Device is restarting…";
 "settings.signalLight.firmwareFailedPrefix" = "Flash failed: ";
 "settings.signalLight.firmwareFailedReassurance" = "The signal light is still running its previous firmware — you can try again.";
+"settings.signalLight.lightSwitch" = "Light Switch";
+"settings.signalLight.renamePlaceholder" = "New name";
+"settings.signalLight.rename" = "Rename";
+"settings.signalLight.renameReconnecting" = "Device is restarting and reconnecting…";
+"settings.signalLight.brightness" = "Brightness";
+"settings.signalLight.calibrateWiring" = "Calibrate Wiring";
+"settings.signalLight.calibrateTitle" = "Wiring Calibration";
+"settings.signalLight.calibrateAsking" = "Which color just lit up?";
+"settings.signalLight.calibrateNothing" = "None";
+"settings.signalLight.calibrateSucceeded" = "Calibration complete — all three colors identified.";
+"settings.signalLight.calibrateNotFoundPrefix" = "Couldn't identify: ";
+"settings.signalLight.calibrateRedo" = "Start Over";
+"settings.signalLight.calibrateDone" = "Done";

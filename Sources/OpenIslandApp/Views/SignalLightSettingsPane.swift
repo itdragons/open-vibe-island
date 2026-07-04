@@ -4,10 +4,13 @@ import UniformTypeIdentifiers
 import OpenIslandCore
 
 struct SignalLightSettingsPane: View {
-    var model: AppModel
+    @Bindable var model: AppModel
 
     @State private var selectedFirmwareURL: URL?
     @State private var isShowingFlashConfirmation = false
+    @State private var renameText = ""
+    @State private var isShowingRenameReconnectNotice = false
+    @State private var wizard: SignalLightCalibrationWizard?
 
     private var lang: LanguageManager { model.lang }
 
@@ -23,11 +26,25 @@ struct SignalLightSettingsPane: View {
     var body: some View {
         Form {
             deviceSection
+            brightnessSection
             modesSection
             firmwareSection
         }
         .formStyle(.grouped)
         .navigationTitle(lang.t("settings.tab.signalLight"))
+        .onChange(of: model.signalLight.status) { _, newStatus in
+            if case .connected = newStatus {
+                isShowingRenameReconnectNotice = false
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { wizard != nil },
+            set: { isPresented in if !isPresented { cancelCalibration() } }
+        )) {
+            if let wizard {
+                calibrationWizardView(wizard)
+            }
+        }
     }
 
     // MARK: Device
@@ -41,6 +58,8 @@ struct SignalLightSettingsPane: View {
                 statusBadge
             }
 
+            Toggle(lang.t("settings.signalLight.lightSwitch"), isOn: $model.signalLightEnabled)
+
             switch model.signalLight.status {
             case .unauthorized:
                 unauthorizedBanner
@@ -49,6 +68,10 @@ struct SignalLightSettingsPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             case .connected:
+                renameRow
+                Button(lang.t("settings.signalLight.calibrateWiring")) {
+                    beginCalibration()
+                }
                 Button(lang.t("settings.signalLight.disconnect"), role: .destructive) {
                     model.signalLight.disconnect()
                 }
@@ -59,6 +82,45 @@ struct SignalLightSettingsPane: View {
                     model.signalLight.startScan()
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var renameRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                TextField(lang.t("settings.signalLight.renamePlaceholder"), text: $renameText)
+                    .textFieldStyle(.roundedBorder)
+                Button(lang.t("settings.signalLight.rename")) {
+                    let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return }
+                    model.signalLight.sendRaw(SignalLightControlCommand.setName(trimmed))
+                    isShowingRenameReconnectNotice = true
+                    renameText = ""
+                }
+                .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if isShowingRenameReconnectNotice {
+                Text(lang.t("settings.signalLight.renameReconnecting"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var brightnessSection: some View {
+        Section(lang.t("settings.signalLight.brightness")) {
+            Slider(
+                value: Binding(
+                    get: { Double(model.signalLightBrightness) },
+                    set: { model.signalLightBrightness = Int($0.rounded()) }
+                ),
+                in: 0...100
+            )
+            Text("\(model.signalLightBrightness)%")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -289,6 +351,107 @@ struct SignalLightSettingsPane: View {
 
     private func formattedByteCount(_ bytes: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
+    // MARK: Wiring Calibration
+
+    private func beginCalibration() {
+        var newWizard = SignalLightCalibrationWizard(candidatePins: SignalLightCalibrationWizard.defaultCandidatePins)
+        model.signalLight.isCalibrating = true
+        if let pin = newWizard.currentPin {
+            model.signalLight.sendRaw(SignalLightControlCommand.pinTest(pin: pin, on: true))
+        }
+        wizard = newWizard
+    }
+
+    private func recordCalibrationObservation(_ observation: SignalLightWizardObservation) {
+        guard var current = wizard else { return }
+        if let pin = current.currentPin {
+            model.signalLight.sendRaw(SignalLightControlCommand.pinTest(pin: pin, on: false))
+        }
+        current.recordObservation(observation)
+        wizard = current
+
+        if current.isFinished {
+            applyCalibrationResult(current)
+        } else if let nextPin = current.currentPin {
+            model.signalLight.sendRaw(SignalLightControlCommand.pinTest(pin: nextPin, on: true))
+        }
+    }
+
+    private func applyCalibrationResult(_ finished: SignalLightCalibrationWizard) {
+        for (color, pin) in finished.mapping {
+            model.signalLight.sendRaw(SignalLightControlCommand.setPin(color: color, pin: pin))
+        }
+        if finished.unresolvedColors.isEmpty {
+            model.signalLight.send(SignalLightEffect(type: .cycle, colors: [.red, .yellow, .green], intervalMs: 200))
+        }
+    }
+
+    private func closeCalibration() {
+        model.signalLight.isCalibrating = false
+        wizard = nil
+        let bucket = SignalLightBucketResolver.resolve(model.state)
+        model.signalLight.send(model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket))
+    }
+
+    private func cancelCalibration() {
+        model.signalLight.isCalibrating = false
+        wizard = nil
+    }
+
+    @ViewBuilder
+    private func calibrationWizardView(_ wizard: SignalLightCalibrationWizard) -> some View {
+        VStack(spacing: 16) {
+            Text(lang.t("settings.signalLight.calibrateTitle"))
+                .font(.headline)
+
+            if let pin = wizard.currentPin {
+                Text(lang.t("settings.signalLight.calibrateAsking"))
+                    .font(.subheadline)
+                Text("GPIO \(pin)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    Button(lang.t("settings.signalLight.red")) { recordCalibrationObservation(.red) }
+                    Button(lang.t("settings.signalLight.yellow")) { recordCalibrationObservation(.yellow) }
+                    Button(lang.t("settings.signalLight.green")) { recordCalibrationObservation(.green) }
+                    Button(lang.t("settings.signalLight.calibrateNothing")) { recordCalibrationObservation(.nothing) }
+                }
+
+                Button(lang.t("settings.general.cancel"), role: .cancel) {
+                    cancelCalibration()
+                }
+            } else {
+                if wizard.unresolvedColors.isEmpty {
+                    Text(lang.t("settings.signalLight.calibrateSucceeded"))
+                        .foregroundStyle(.green)
+                } else {
+                    Text(lang.t("settings.signalLight.calibrateNotFoundPrefix") + wizard.unresolvedColors.map(colorName).joined(separator: ", "))
+                        .foregroundStyle(.orange)
+                }
+
+                HStack {
+                    Button(lang.t("settings.signalLight.calibrateRedo")) {
+                        beginCalibration()
+                    }
+                    Button(lang.t("settings.signalLight.calibrateDone")) {
+                        closeCalibration()
+                    }
+                }
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 320)
+    }
+
+    private func colorName(_ color: SignalLightColor) -> String {
+        switch color {
+        case .red: lang.t("settings.signalLight.red")
+        case .yellow: lang.t("settings.signalLight.yellow")
+        case .green: lang.t("settings.signalLight.green")
+        }
     }
 }
 

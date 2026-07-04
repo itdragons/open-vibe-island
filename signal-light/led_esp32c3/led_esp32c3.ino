@@ -3,12 +3,23 @@
 #include <BLEUtils.h>
 #include <BLE2902.h>
 #include <Update.h>
+#include <Preferences.h>
 #include "config.h"
 
 
 // ESP32-C3 Super Mini supports BLE, but not BluetoothSerial.
 // Use the BLE device named C3_LED to control the lights and send firmware OTA.
 
+
+Preferences prefs;
+
+// Runtime pin assignment and BLE name — loaded from NVS in setup(), falling
+// back to the config.h defaults on a fresh chip. Reassignable at runtime via
+// SETPIN/SETNAME without reflashing.
+int led_red = DEFAULT_LED_RED;
+int led_yellow = DEFAULT_LED_YELLOW;
+int led_green = DEFAULT_LED_GREEN;
+String bleName;
 
 bool lightOn = true;
 
@@ -19,6 +30,8 @@ const int LED_DIM = 128; // 半亮
 const int LED_OFF = 255; // 255 是全灭（高电平）
 const int PWM_MIN = 0;
 const int PWM_MAX = 255;
+
+int brightnessPercent = 100; // 0-100，通过 BRIGHTNESS 命令调节；App 重连后会重新同步
 
 int redValue = LED_ON;
 int yellowValue = LED_ON;
@@ -33,12 +46,21 @@ enum LedMode {
   MODE_SUCCESS,
   MODE_ERROR,
   MODE_ALARM,
-  MODE_CUSTOM_EFFECT
+  MODE_CUSTOM_EFFECT,
+  MODE_PIN_TEST
 };
 
 LedMode currentMode = MODE_MANUAL;
 unsigned long lastFrameMs = 0;
 int frame = 0;
+
+// Wiring-calibration pin-test state (see handlePinTestCommand). Isolated
+// from the effect-rendering modes above so a PINTEST sequence can't be
+// silently overwritten by, or overwrite, a live EFFECT: push.
+int pinTestActivePin = -1;
+bool pinTestPriorLightOn = true;
+LedMode pinTestPriorMode = MODE_MANUAL;
+unsigned long pinTestDeadlineMs = 0;
 
 enum CustomEffectType {
   EFFECT_SOLID,
@@ -60,6 +82,9 @@ size_t otaExpectedSize = UPDATE_SIZE_UNKNOWN;
 size_t otaWrittenBytes = 0;
 unsigned long restartAtMs = 0;
 
+bool restartAfterRename = false;
+unsigned long restartAfterRenameAtMs = 0;
+
 void handleCommand(String cmd);
 void handleOtaControl(String cmd);
 void handleOtaData(BLECharacteristic *characteristic);
@@ -69,6 +94,15 @@ bool isCommand(String cmd, String a, String b = "", String c = "", String d = ""
 void handleEffectCommand(String cmd);
 void animateCustomEffect(unsigned long nowMs);
 void applyCustomEffectValue(int &red, int &yellow, int &green, int onValue, int activeIndex);
+bool isSafeGpioPin(int pin);
+bool isNumericString(const String &text);
+void handleSetPinCommand(String cmd);
+void sendConfigStatus();
+void handlePinTestCommand(String cmd);
+void endPinTestIfExpired(unsigned long nowMs);
+void handleSetNameCommand(String cmd);
+void handleBrightnessCommand(String cmd);
+int currentOnValue();
 
 class ServerCallback : public BLEServerCallbacks {
   void onDisconnect(BLEServer *server) {
@@ -108,6 +142,21 @@ void setup() {
   Serial.println("============================");
   Serial.println("C3 LED starting...");
 
+  prefs.begin("wglight", false);
+  led_red = prefs.getInt("pinRed", DEFAULT_LED_RED);
+  led_yellow = prefs.getInt("pinYellow", DEFAULT_LED_YELLOW);
+  led_green = prefs.getInt("pinGreen", DEFAULT_LED_GREEN);
+  bleName = prefs.getString("bleName", "");
+  if (bleName.length() == 0) {
+    uint64_t chipId = ESP.getEfuseMac();
+    char suffix[5];
+    snprintf(suffix, sizeof(suffix), "%04X", (uint16_t)(chipId & 0xFFFF));
+    bleName = BLE_NAME_PREFIX + String(suffix);
+    prefs.putString("bleName", bleName);
+  }
+  Serial.println("Pins -> R:" + String(led_red) + " Y:" + String(led_yellow) + " G:" + String(led_green));
+  Serial.println("BLE name -> " + bleName);
+
   pinMode(led_green, OUTPUT);
   pinMode(led_red, OUTPUT);
   pinMode(led_yellow, OUTPUT);
@@ -115,7 +164,7 @@ void setup() {
 
   showManualLights();
 
-  BLEDevice::init(BLE_DEVICE_NAME.c_str());
+  BLEDevice::init(bleName.c_str());
   BLEDevice::setMTU(517);
 
   BLEServer *server = BLEDevice::createServer();
@@ -168,6 +217,10 @@ void loop() {
     ESP.restart();
   }
 
+  if (restartAfterRename && millis() >= restartAfterRenameAtMs) {
+    ESP.restart();
+  }
+
   if (Serial.available() > 0) {
     String serialCmd = Serial.readStringUntil('\n');
     serialCmd.trim();
@@ -178,6 +231,8 @@ void loop() {
   }
 
   // checkButton(); // removed
+
+  endPinTestIfExpired(millis());
 
   if (!lightOn) {
     turnOffLights();
@@ -231,6 +286,8 @@ void updateLights() {
     animateAlarm(nowMs);
   } else if (currentMode == MODE_CUSTOM_EFFECT) {
     animateCustomEffect(nowMs);
+  } else if (currentMode == MODE_PIN_TEST) {
+    // Pin driven directly by handlePinTestCommand(); nothing to render here.
   }
 }
 
@@ -254,6 +311,10 @@ void animateThinking(unsigned long nowMs) {
   } else {
     setLights(LED_DIM, LED_OFF, LED_ON);
   }
+}
+
+int currentOnValue() {
+  return map(brightnessPercent, 0, 100, LED_OFF, LED_ON);
 }
 
 int breathValue(unsigned long nowMs, unsigned long periodMs) {
@@ -373,27 +434,31 @@ void animateCustomEffect(unsigned long nowMs) {
   int red = LED_OFF;
   int yellow = LED_OFF;
   int green = LED_OFF;
+  int onValue = currentOnValue();
 
   if (customEffectType == EFFECT_SOLID) {
-    applyCustomEffectValue(red, yellow, green, LED_ON, -1);
+    applyCustomEffectValue(red, yellow, green, onValue, -1);
   } else if (customEffectType == EFFECT_BLINK) {
     unsigned long interval = customEffectIntervalMs == 0 ? 1 : customEffectIntervalMs;
     bool on = (nowMs / interval) % 2 == 0;
-    applyCustomEffectValue(red, yellow, green, on ? LED_ON : LED_OFF, -1);
+    applyCustomEffectValue(red, yellow, green, on ? onValue : LED_OFF, -1);
   } else if (customEffectType == EFFECT_CYCLE) {
     unsigned long interval = customEffectIntervalMs == 0 ? 1 : customEffectIntervalMs;
     int activeIndex = (int)((nowMs / interval) % customEffectColorCount);
-    applyCustomEffectValue(red, yellow, green, LED_ON, activeIndex);
+    applyCustomEffectValue(red, yellow, green, onValue, activeIndex);
   } else if (customEffectType == EFFECT_BREATHE) {
     unsigned long period = customEffectIntervalMs == 0 ? 1 : customEffectIntervalMs;
-    int value = breathValue(nowMs, period);
-    applyCustomEffectValue(red, yellow, green, value, -1);
+    int rawValue = breathValue(nowMs, period);
+    int scaledValue = map(rawValue, LED_ON, LED_OFF, onValue, LED_OFF);
+    applyCustomEffectValue(red, yellow, green, scaledValue, -1);
   }
 
   setLights(red, yellow, green);
 }
 
 void handleCommand(String cmd) {
+  String original = cmd;
+  original.trim();
   cmd.trim();
   cmd.toUpperCase();
 
@@ -403,6 +468,31 @@ void handleCommand(String cmd) {
 
   if (cmd.startsWith("EFFECT:")) {
     handleEffectCommand(cmd);
+    return;
+  }
+
+  if (cmd.startsWith("SETPIN:")) {
+    handleSetPinCommand(cmd);
+    return;
+  }
+
+  if (cmd == "GETCONFIG") {
+    sendConfigStatus();
+    return;
+  }
+
+  if (cmd.startsWith("PINTEST:")) {
+    handlePinTestCommand(cmd);
+    return;
+  }
+
+  if (cmd.startsWith("SETNAME:")) {
+    handleSetNameCommand(original);
+    return;
+  }
+
+  if (cmd.startsWith("BRIGHTNESS:")) {
+    handleBrightnessCommand(cmd);
     return;
   }
 
@@ -449,7 +539,7 @@ void handleCommand(String cmd) {
   }
 
   if (cmd == "BLE") {
-    Serial.println("Bluetooth Name: " + BLE_DEVICE_NAME);
+    Serial.println("Bluetooth Name: " + bleName);
     return;
   }
 
@@ -632,4 +722,169 @@ void setOtaStatus(const String &message) {
 
 bool isCommand(String cmd, String a, String b, String c, String d) {
   return cmd == a || cmd == b || cmd == c || cmd == d;
+}
+
+bool isSafeGpioPin(int pin) {
+  for (int i = 0; i < SAFE_GPIO_PIN_COUNT; i++) {
+    if (SAFE_GPIO_PINS[i] == pin) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool isNumericString(const String &text) {
+  if (text.length() == 0) {
+    return false;
+  }
+  for (unsigned int i = 0; i < text.length(); i++) {
+    if (!isDigit(text.charAt(i))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void handleSetPinCommand(String cmd) {
+  // Format: SETPIN:<R|Y|G>:<pin>, e.g. SETPIN:R:10
+  int firstColon = cmd.indexOf(':');
+  int secondColon = cmd.indexOf(':', firstColon + 1);
+  if (firstColon < 0 || secondColon < 0) {
+    setOtaStatus("SETPIN failed: malformed command");
+    return;
+  }
+
+  String colorText = cmd.substring(firstColon + 1, secondColon);
+  String pinText = cmd.substring(secondColon + 1);
+  if (!isNumericString(pinText)) {
+    setOtaStatus("SETPIN failed: malformed command");
+    return;
+  }
+  int pin = pinText.toInt();
+
+  if (!isSafeGpioPin(pin)) {
+    setOtaStatus("SETPIN failed: unsupported pin " + String(pin));
+    return;
+  }
+
+  pinMode(pin, OUTPUT);
+
+  if (colorText == "R") {
+    led_red = pin;
+    prefs.putInt("pinRed", pin);
+  } else if (colorText == "Y") {
+    led_yellow = pin;
+    prefs.putInt("pinYellow", pin);
+  } else if (colorText == "G") {
+    led_green = pin;
+    prefs.putInt("pinGreen", pin);
+  } else {
+    setOtaStatus("SETPIN failed: unknown color " + colorText);
+    return;
+  }
+
+  setOtaStatus("SETPIN ok: " + colorText + "=" + String(pin));
+}
+
+void sendConfigStatus() {
+  String status = "CONFIG:R=" + String(led_red) +
+                   ",Y=" + String(led_yellow) +
+                   ",G=" + String(led_green) +
+                   ",NAME=" + bleName;
+  setOtaStatus(status);
+}
+
+void handlePinTestCommand(String cmd) {
+  // Format: PINTEST:<pin>:<0|1>
+  int firstColon = cmd.indexOf(':');
+  int secondColon = cmd.indexOf(':', firstColon + 1);
+  if (firstColon < 0 || secondColon < 0) {
+    setOtaStatus("PINTEST failed: malformed command");
+    return;
+  }
+
+  String pinText = cmd.substring(firstColon + 1, secondColon);
+  String valueText = cmd.substring(secondColon + 1);
+  if (!isNumericString(pinText) || !isNumericString(valueText)) {
+    // Guards against e.g. "PINTEST:R:1" or a blank field silently
+    // parsing to pin/value 0 via String::toInt() — see Task 2's fix for
+    // the same class of bug in SETPIN, which is where isNumericString
+    // is defined.
+    setOtaStatus("PINTEST failed: malformed command");
+    return;
+  }
+
+  int pin = pinText.toInt();
+  int value = valueText.toInt();
+
+  if (!isSafeGpioPin(pin)) {
+    setOtaStatus("PINTEST failed: unsupported pin " + String(pin));
+    return;
+  }
+
+  if (currentMode != MODE_PIN_TEST) {
+    // Entering test mode for the first time this sequence: remember what to
+    // restore, and force the light on even if it was switched off, so the
+    // wizard works regardless of the light-switch state.
+    pinTestPriorLightOn = lightOn;
+    pinTestPriorMode = currentMode;
+    lightOn = true;
+    currentMode = MODE_PIN_TEST;
+  } else if (pinTestActivePin != -1 && pinTestActivePin != pin) {
+    // Switching to a different candidate pin mid-wizard: turn the previous
+    // one off so it doesn't stay lit if the app forgets to.
+    analogWrite(pinTestActivePin, LED_OFF);
+  }
+
+  pinMode(pin, OUTPUT);
+  analogWrite(pin, value == 1 ? LED_ON : LED_OFF);
+  pinTestActivePin = pin;
+  pinTestDeadlineMs = millis() + 5000;
+}
+
+void endPinTestIfExpired(unsigned long nowMs) {
+  if (currentMode != MODE_PIN_TEST || nowMs < pinTestDeadlineMs) {
+    return;
+  }
+
+  if (pinTestActivePin != -1) {
+    analogWrite(pinTestActivePin, LED_OFF);
+  }
+  pinTestActivePin = -1;
+  lightOn = pinTestPriorLightOn;
+  currentMode = pinTestPriorMode;
+}
+
+void handleSetNameCommand(String cmd) {
+  // Format: SETNAME:<name> — `cmd` here is the ORIGINAL (non-uppercased)
+  // command text so the chosen name keeps its case.
+  int firstColon = cmd.indexOf(':');
+  if (firstColon < 0) {
+    setOtaStatus("SETNAME failed: malformed command");
+    return;
+  }
+
+  String newName = cmd.substring(firstColon + 1);
+  newName.trim();
+  if (newName.length() == 0) {
+    setOtaStatus("SETNAME failed: empty name");
+    return;
+  }
+
+  prefs.putString("bleName", newName);
+  setOtaStatus("SETNAME ok, restarting");
+  restartAfterRename = true;
+  restartAfterRenameAtMs = millis() + 3000;
+}
+
+void handleBrightnessCommand(String cmd) {
+  // Format: BRIGHTNESS:<0-100>
+  int colonIndex = cmd.indexOf(':');
+  if (colonIndex < 0) {
+    setOtaStatus("BRIGHTNESS failed: malformed command");
+    return;
+  }
+
+  int percent = cmd.substring(colonIndex + 1).toInt();
+  brightnessPercent = constrain(percent, 0, 100);
 }

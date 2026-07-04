@@ -29,6 +29,8 @@ final class AppModel {
     private static let legacyCompletedStaleThresholdDefaultsKey = "appearance.island.v8.completedStaleThreshold"
     private static let appearanceProfileSettingsDefaultsKey = "appearance.island.v8.settingsProfile"
     private static let signalLightEffectsDefaultsKey = "signalLight.effects"
+    private static let signalLightBrightnessDefaultsKey = "signalLight.brightness"
+    private static let signalLightEnabledDefaultsKey = "signalLight.enabled"
 
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
@@ -54,7 +56,9 @@ final class AppModel {
             let bucket = SignalLightBucketResolver.resolve(state)
             if bucket != lastSentSignalLightBucket {
                 lastSentSignalLightBucket = bucket
-                signalLight.send(signalLightEffects[bucket] ?? .defaultEffect(for: bucket))
+                if signalLightEnabled && !signalLight.isCalibrating {
+                    signalLight.send(resolvedSignalLightEffect())
+                }
             }
         }
     }
@@ -462,6 +466,27 @@ final class AppModel {
         }
     }
 
+    var signalLightBrightness: Int = AppModel.loadSignalLightBrightness() {
+        didSet {
+            guard signalLightBrightness != oldValue else { return }
+            UserDefaults.standard.set(signalLightBrightness, forKey: Self.signalLightBrightnessDefaultsKey)
+            signalLight.sendRaw(SignalLightControlCommand.brightness(percent: signalLightBrightness))
+        }
+    }
+
+    var signalLightEnabled: Bool = AppModel.loadSignalLightEnabled() {
+        didSet {
+            guard signalLightEnabled != oldValue else { return }
+            UserDefaults.standard.set(signalLightEnabled, forKey: Self.signalLightEnabledDefaultsKey)
+            signalLight.isLightSwitchedOn = signalLightEnabled
+            if signalLightEnabled {
+                signalLight.send(resolvedSignalLightEffect())
+            } else {
+                signalLight.sendRaw(SignalLightControlCommand.off)
+            }
+        }
+    }
+
     @ObservationIgnored
     private(set) var watchRelay: WatchNotificationRelay?
 
@@ -606,6 +631,25 @@ final class AppModel {
         return Dictionary(uniqueKeysWithValues: SignalLightBucket.allCases.map { ($0, .defaultEffect(for: $0)) })
     }
 
+    private static func loadSignalLightBrightness() -> Int {
+        guard UserDefaults.standard.object(forKey: signalLightBrightnessDefaultsKey) != nil else {
+            return 100
+        }
+        return UserDefaults.standard.integer(forKey: signalLightBrightnessDefaultsKey)
+    }
+
+    private static func loadSignalLightEnabled() -> Bool {
+        guard UserDefaults.standard.object(forKey: signalLightEnabledDefaultsKey) != nil else {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: signalLightEnabledDefaultsKey)
+    }
+
+    private func resolvedSignalLightEffect() -> SignalLightEffect {
+        let bucket = SignalLightBucketResolver.resolve(state)
+        return signalLightEffects[bucket] ?? .defaultEffect(for: bucket)
+    }
+
     init(
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
             try TerminalJumpService().jump(to: target)
@@ -666,10 +710,12 @@ final class AppModel {
         }
 
         signalLight.currentEffectProvider = { [weak self] in
-            guard let self else { return nil }
-            let bucket = SignalLightBucketResolver.resolve(self.state)
-            return self.signalLightEffects[bucket] ?? .defaultEffect(for: bucket)
+            self?.resolvedSignalLightEffect()
         }
+        signalLight.currentBrightnessProvider = { [weak self] in
+            self?.signalLightBrightness
+        }
+        signalLight.isLightSwitchedOn = signalLightEnabled
 
         discovery.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
         discovery.onStatusMessage = { [weak self] message in

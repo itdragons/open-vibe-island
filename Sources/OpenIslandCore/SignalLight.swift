@@ -128,3 +128,72 @@ public enum SignalLightCommandEncoder {
         return SignalLightEffect(type: type, colors: colors, intervalMs: intervalMs)
     }
 }
+
+/// Fire-and-forget maintenance commands sent to the signal light outside the
+/// bucket-effect/`EFFECT:` protocol — pin calibration, renaming, brightness,
+/// and the light switch. See `signal-light/led_esp32c3/led_esp32c3.ino`.
+public enum SignalLightControlCommand {
+    public static func pinTest(pin: Int, on: Bool) -> String {
+        "PINTEST:\(pin):\(on ? 1 : 0)"
+    }
+
+    public static func setPin(color: SignalLightColor, pin: Int) -> String {
+        "SETPIN:\(color.commandLetter):\(pin)"
+    }
+
+    public static func setName(_ name: String) -> String {
+        "SETNAME:\(name)"
+    }
+
+    public static let getConfig = "GETCONFIG"
+
+    public static func brightness(percent: Int) -> String {
+        "BRIGHTNESS:\(percent)"
+    }
+
+    public static let off = "OFF"
+}
+
+/// The device's current pin mapping and BLE name, as reported by `GETCONFIG`.
+public struct SignalLightDeviceConfig: Equatable, Sendable {
+    public var pins: [SignalLightColor: Int]
+    public var name: String
+
+    public init(pins: [SignalLightColor: Int], name: String) {
+        self.pins = pins
+        self.name = name
+    }
+}
+
+/// Parses the firmware's `CONFIG:R=5,Y=6,G=7,NAME=WG-A1B2` status reply
+/// (see `sendConfigStatus` in `led_esp32c3.ino`).
+public enum SignalLightConfigDecoder {
+    public static func decode(_ line: String) -> SignalLightDeviceConfig? {
+        guard line.hasPrefix("CONFIG:") else {
+            return nil
+        }
+
+        var pins: [SignalLightColor: Int] = [:]
+        var name: String?
+
+        for field in line.dropFirst("CONFIG:".count).split(separator: ",") {
+            let parts = field.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            let key = String(parts[0])
+            let value = String(parts[1])
+
+            switch key {
+            case "R": if let pin = Int(value) { pins[.red] = pin }
+            case "Y": if let pin = Int(value) { pins[.yellow] = pin }
+            case "G": if let pin = Int(value) { pins[.green] = pin }
+            case "NAME": name = value
+            default: break
+            }
+        }
+
+        guard pins.count == 3, let name else {
+            return nil
+        }
+        return SignalLightDeviceConfig(pins: pins, name: name)
+    }
+}
