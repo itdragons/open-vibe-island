@@ -81,6 +81,7 @@ void handleEffectCommand(String cmd);
 void animateCustomEffect(unsigned long nowMs);
 void applyCustomEffectValue(int &red, int &yellow, int &green, int onValue, int activeIndex);
 bool isSafeGpioPin(int pin);
+bool isNumericString(const String &text);
 void handleSetPinCommand(String cmd);
 void sendConfigStatus();
 
@@ -682,6 +683,18 @@ bool isSafeGpioPin(int pin) {
   return false;
 }
 
+bool isNumericString(const String &text) {
+  if (text.length() == 0) {
+    return false;
+  }
+  for (unsigned int i = 0; i < text.length(); i++) {
+    if (!isDigit(text.charAt(i))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void handleSetPinCommand(String cmd) {
   // Format: SETPIN:<R|Y|G>:<pin>, e.g. SETPIN:R:10
   int firstColon = cmd.indexOf(':');
@@ -692,7 +705,12 @@ void handleSetPinCommand(String cmd) {
   }
 
   String colorText = cmd.substring(firstColon + 1, secondColon);
-  int pin = cmd.substring(secondColon + 1).toInt();
+  String pinText = cmd.substring(secondColon + 1);
+  if (!isNumericString(pinText)) {
+    setOtaStatus("SETPIN failed: malformed command");
+    return;
+  }
+  int pin = pinText.toInt();
 
   if (!isSafeGpioPin(pin)) {
     setOtaStatus("SETPIN failed: unsupported pin " + String(pin));
