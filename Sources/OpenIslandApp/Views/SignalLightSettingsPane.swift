@@ -356,7 +356,7 @@ struct SignalLightSettingsPane: View {
     // MARK: Wiring Calibration
 
     private func beginCalibration() {
-        var newWizard = SignalLightCalibrationWizard(candidatePins: SignalLightCalibrationWizard.defaultCandidatePins)
+        let newWizard = SignalLightCalibrationWizard(candidatePins: SignalLightCalibrationWizard.defaultCandidatePins)
         model.signalLight.isCalibrating = true
         if let pin = newWizard.currentPin {
             model.signalLight.sendRaw(SignalLightControlCommand.pinTest(pin: pin, on: true))
@@ -391,13 +391,28 @@ struct SignalLightSettingsPane: View {
     private func closeCalibration() {
         model.signalLight.isCalibrating = false
         wizard = nil
-        let bucket = SignalLightBucketResolver.resolve(model.state)
-        model.signalLight.send(model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket))
+        resyncLightSwitchState()
     }
 
     private func cancelCalibration() {
         model.signalLight.isCalibrating = false
         wizard = nil
+        resyncLightSwitchState()
+    }
+
+    /// Restores the light to whatever it should be showing once calibration
+    /// ends — the current bucket's effect if the light switch is on, or an
+    /// explicit `OFF` if it's off. Without this, ending calibration while
+    /// switched off would leave the last-tested PINTEST pin lit (or, before
+    /// this fix, `closeCalibration` would ignore the switch entirely and
+    /// turn the light back on).
+    private func resyncLightSwitchState() {
+        if model.signalLightEnabled {
+            let bucket = SignalLightBucketResolver.resolve(model.state)
+            model.signalLight.send(model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket))
+        } else {
+            model.signalLight.sendRaw(SignalLightControlCommand.off)
+        }
     }
 
     @ViewBuilder
