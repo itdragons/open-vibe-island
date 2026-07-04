@@ -268,7 +268,7 @@
 "settings.signalLight.firmwareFailedPrefix" = "燒錄失敗：";
 "settings.signalLight.firmwareFailedReassurance" = "信號燈仍在執行先前的韌體，可以重試。";
 "settings.signalLight.lightSwitch" = "燈光開關";
-"settings.signalLight.renamePlaceholder" = "新名稱";
+"settings.signalLight.renamePlaceholder" = "藍牙名稱";
 "settings.signalLight.rename" = "重新命名";
 "settings.signalLight.renameReconnecting" = "裝置正在重新啟動並重新連線…";
 "settings.signalLight.calibrateWiring" = "校準接線";
