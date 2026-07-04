@@ -11,6 +11,7 @@ struct SignalLightSettingsPane: View {
     @State private var renameText = ""
     @State private var isShowingRenameReconnectNotice = false
     @State private var wizard: SignalLightCalibrationWizard?
+    @State private var isDeviceManagementExpanded = false
 
     private var lang: LanguageManager { model.lang }
 
@@ -26,9 +27,8 @@ struct SignalLightSettingsPane: View {
     var body: some View {
         Form {
             deviceSection
-            brightnessSection
-            modesSection
-            firmwareSection
+            lightSection
+            deviceManagementSection
         }
         .formStyle(.grouped)
         .navigationTitle(lang.t("settings.tab.signalLight"))
@@ -58,8 +58,6 @@ struct SignalLightSettingsPane: View {
                 statusBadge
             }
 
-            Toggle(lang.t("settings.signalLight.lightSwitch"), isOn: $model.signalLightEnabled)
-
             switch model.signalLight.status {
             case .unauthorized:
                 unauthorizedBanner
@@ -68,10 +66,6 @@ struct SignalLightSettingsPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             case .connected:
-                renameRow
-                Button(lang.t("settings.signalLight.calibrateWiring")) {
-                    beginCalibration()
-                }
                 Button(lang.t("settings.signalLight.disconnect"), role: .destructive) {
                     model.signalLight.disconnect()
                 }
@@ -109,8 +103,10 @@ struct SignalLightSettingsPane: View {
     }
 
     @ViewBuilder
-    private var brightnessSection: some View {
-        Section(lang.t("settings.signalLight.brightness")) {
+    private var lightSection: some View {
+        Section(lang.t("settings.signalLight.lightSection")) {
+            Toggle(lang.t("settings.signalLight.lightSwitch"), isOn: $model.signalLightEnabled)
+
             Slider(
                 value: Binding(
                     get: { Double(model.signalLightBrightness) },
@@ -121,6 +117,27 @@ struct SignalLightSettingsPane: View {
             Text("\(model.signalLightBrightness)%")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            ForEach(SignalLightBucket.allCases, id: \.self) { bucket in
+                SignalLightModeRow(
+                    title: bucketTitle(bucket),
+                    lang: lang,
+                    effect: Binding(
+                        get: { model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket) },
+                        set: { model.signalLightEffects[bucket] = $0 }
+                    ),
+                    isTestDisabled: isTransferring,
+                    onTest: { effect in
+                        model.signalLight.send(effect)
+                    }
+                )
+            }
+
+            Button(lang.t("settings.signalLight.resetDefaults")) {
+                model.signalLightEffects = Dictionary(
+                    uniqueKeysWithValues: SignalLightBucket.allCases.map { ($0, .defaultEffect(for: $0)) }
+                )
+            }
         }
     }
 
@@ -191,36 +208,6 @@ struct SignalLightSettingsPane: View {
         }
     }
 
-    // MARK: Modes
-
-    @ViewBuilder
-    private var modesSection: some View {
-        Section {
-            ForEach(SignalLightBucket.allCases, id: \.self) { bucket in
-                SignalLightModeRow(
-                    title: bucketTitle(bucket),
-                    lang: lang,
-                    effect: Binding(
-                        get: { model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket) },
-                        set: { model.signalLightEffects[bucket] = $0 }
-                    ),
-                    isTestDisabled: isTransferring,
-                    onTest: { effect in
-                        model.signalLight.send(effect)
-                    }
-                )
-            }
-
-            Button(lang.t("settings.signalLight.resetDefaults")) {
-                model.signalLightEffects = Dictionary(
-                    uniqueKeysWithValues: SignalLightBucket.allCases.map { ($0, .defaultEffect(for: $0)) }
-                )
-            }
-        } header: {
-            Text(lang.t("settings.signalLight.modes"))
-        }
-    }
-
     private func bucketTitle(_ bucket: SignalLightBucket) -> String {
         switch bucket {
         case .needsApproval: lang.t("settings.signalLight.bucket.needsApproval")
@@ -230,19 +217,27 @@ struct SignalLightSettingsPane: View {
         }
     }
 
-    // MARK: Firmware
+    // MARK: Device Management
 
     @ViewBuilder
-    private var firmwareSection: some View {
-        Section(lang.t("settings.signalLight.firmware")) {
-            if case .connected = model.signalLight.status {
-                firmwareVersionRow
-                firmwareFilePickerRow
-                firmwareActionRow
-            } else {
-                Text(lang.t("settings.signalLight.firmwareNeedsConnection"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+    private var deviceManagementSection: some View {
+        Section {
+            DisclosureGroup(lang.t("settings.signalLight.deviceManagement"), isExpanded: $isDeviceManagementExpanded) {
+                if case .connected = model.signalLight.status {
+                    renameRow
+                    Divider()
+                    Button(lang.t("settings.signalLight.calibrateWiring")) {
+                        beginCalibration()
+                    }
+                    Divider()
+                    firmwareVersionRow
+                    firmwareFilePickerRow
+                    firmwareActionRow
+                } else {
+                    Text(lang.t("settings.signalLight.firmwareNeedsConnection"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
