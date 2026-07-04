@@ -498,8 +498,6 @@ private struct SignalLightModeRow: View {
                         default:
                             effect.intervalMs = 600
                         }
-                    } else if newType == .solid {
-                        effect.intervalMs = 0
                     }
                 }
             )) {
