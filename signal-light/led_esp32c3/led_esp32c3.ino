@@ -81,6 +81,8 @@ void handleEffectCommand(String cmd);
 void animateCustomEffect(unsigned long nowMs);
 void applyCustomEffectValue(int &red, int &yellow, int &green, int onValue, int activeIndex);
 bool isSafeGpioPin(int pin);
+void handleSetPinCommand(String cmd);
+void sendConfigStatus();
 
 class ServerCallback : public BLEServerCallbacks {
   void onDisconnect(BLEServer *server) {
@@ -433,6 +435,16 @@ void handleCommand(String cmd) {
     return;
   }
 
+  if (cmd.startsWith("SETPIN:")) {
+    handleSetPinCommand(cmd);
+    return;
+  }
+
+  if (cmd == "GETCONFIG") {
+    sendConfigStatus();
+    return;
+  }
+
   if (isCommand(cmd, "GREEN_BLINK", "GREENBLINK", "BLINK", "GBLINK")) {
     lightOn = true;
     startMode(MODE_GREEN_BLINK);
@@ -668,4 +680,48 @@ bool isSafeGpioPin(int pin) {
     }
   }
   return false;
+}
+
+void handleSetPinCommand(String cmd) {
+  // Format: SETPIN:<R|Y|G>:<pin>, e.g. SETPIN:R:10
+  int firstColon = cmd.indexOf(':');
+  int secondColon = cmd.indexOf(':', firstColon + 1);
+  if (firstColon < 0 || secondColon < 0) {
+    setOtaStatus("SETPIN failed: malformed command");
+    return;
+  }
+
+  String colorText = cmd.substring(firstColon + 1, secondColon);
+  int pin = cmd.substring(secondColon + 1).toInt();
+
+  if (!isSafeGpioPin(pin)) {
+    setOtaStatus("SETPIN failed: unsupported pin " + String(pin));
+    return;
+  }
+
+  pinMode(pin, OUTPUT);
+
+  if (colorText == "R") {
+    led_red = pin;
+    prefs.putInt("pinRed", pin);
+  } else if (colorText == "Y") {
+    led_yellow = pin;
+    prefs.putInt("pinYellow", pin);
+  } else if (colorText == "G") {
+    led_green = pin;
+    prefs.putInt("pinGreen", pin);
+  } else {
+    setOtaStatus("SETPIN failed: unknown color " + colorText);
+    return;
+  }
+
+  setOtaStatus("SETPIN ok: " + colorText + "=" + String(pin));
+}
+
+void sendConfigStatus() {
+  String status = "CONFIG:R=" + String(led_red) +
+                   ",Y=" + String(led_yellow) +
+                   ",G=" + String(led_green) +
+                   ",NAME=" + bleName;
+  setOtaStatus(status);
 }
