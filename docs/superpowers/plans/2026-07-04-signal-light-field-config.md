@@ -423,7 +423,7 @@ git commit -m "feat(firmware): add SETPIN and GETCONFIG commands"
 - Modify: `signal-light/led_esp32c3/led_esp32c3.ino`
 
 **Interfaces:**
-- Consumes: `isSafeGpioPin`, `setOtaStatus` from earlier tasks.
+- Consumes: `isSafeGpioPin`, `setOtaStatus` from earlier tasks, and `isNumericString` (added during Task 2's post-review fix — validates a substring is non-empty and all-digit before `toInt()`, guarding against malformed input silently parsing to `0`).
 - Produces (consumed by Task 6/12 indirectly via the `PINTEST` wire protocol): `MODE_PIN_TEST` enum case, `void handlePinTestCommand(String cmd)`, `void endPinTestIfExpired(unsigned long nowMs)`.
 - This task is also what makes the **light switch** feature (spec section "Light switch (standby)") correct — no separate firmware task exists for it, since the existing `OFF`/`EFFECT:` commands already implement it. The only firmware gap was `PINTEST` being silently ignored while the light is switched off, which this task fixes.
 
@@ -627,8 +627,19 @@ void handlePinTestCommand(String cmd) {
     return;
   }
 
-  int pin = cmd.substring(firstColon + 1, secondColon).toInt();
-  int value = cmd.substring(secondColon + 1).toInt();
+  String pinText = cmd.substring(firstColon + 1, secondColon);
+  String valueText = cmd.substring(secondColon + 1);
+  if (!isNumericString(pinText) || !isNumericString(valueText)) {
+    // Guards against e.g. "PINTEST:R:1" or a blank field silently
+    // parsing to pin/value 0 via String::toInt() — see Task 2's fix for
+    // the same class of bug in SETPIN, which is where isNumericString
+    // is defined.
+    setOtaStatus("PINTEST failed: malformed command");
+    return;
+  }
+
+  int pin = pinText.toInt();
+  int value = valueText.toInt();
 
   if (!isSafeGpioPin(pin)) {
     setOtaStatus("PINTEST failed: unsupported pin " + String(pin));
