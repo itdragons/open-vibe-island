@@ -100,6 +100,7 @@ struct SignalLightSettingsPane: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .padding(.top, 6)
     }
 
     @ViewBuilder
@@ -107,16 +108,20 @@ struct SignalLightSettingsPane: View {
         Section(lang.t("settings.signalLight.lightSection")) {
             Toggle(lang.t("settings.signalLight.lightSwitch"), isOn: $model.signalLightEnabled)
 
-            Slider(
-                value: Binding(
-                    get: { Double(model.signalLightBrightness) },
-                    set: { model.signalLightBrightness = Int($0.rounded()) }
-                ),
-                in: 0...100
-            )
-            Text("\(model.signalLightBrightness)%")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            HStack {
+                Slider(
+                    value: Binding(
+                        get: { Double(model.signalLightBrightness) },
+                        set: { model.signalLightBrightness = Int($0.rounded()) }
+                    ),
+                    in: 0...100
+                )
+                Text("\(model.signalLightBrightness)%")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .frame(width: 40, alignment: .trailing)
+            }
 
             ForEach(SignalLightBucket.allCases, id: \.self) { bucket in
                 SignalLightModeRow(
@@ -257,11 +262,28 @@ struct SignalLightSettingsPane: View {
         HStack {
             if let selectedFirmwareURL {
                 Text(selectedFirmwareURL.lastPathComponent)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 Spacer()
                 Button(lang.t("settings.signalLight.firmwareChangeFile")) {
                     presentFirmwarePicker()
                 }
                 .disabled(isTransferring)
+                Button(lang.t("settings.signalLight.firmwareFlash")) {
+                    isShowingFlashConfirmation = true
+                }
+                .disabled(isTransferring)
+                .confirmationDialog(
+                    lang.t("settings.signalLight.firmwareConfirmTitle"),
+                    isPresented: $isShowingFlashConfirmation
+                ) {
+                    Button(lang.t("settings.signalLight.firmwareConfirmAction"), role: .destructive) {
+                        model.signalLight.beginFirmwareUpdate(fileURL: selectedFirmwareURL)
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text(lang.t("settings.signalLight.firmwareConfirmMessage"))
+                }
             } else {
                 Button(lang.t("settings.signalLight.firmwareChooseFile")) {
                     presentFirmwarePicker()
@@ -274,32 +296,16 @@ struct SignalLightSettingsPane: View {
     @ViewBuilder
     private var firmwareActionRow: some View {
         switch model.signalLight.firmwareUpdater.state {
-        case .idle, .failed:
-            if case .failed(let reason) = model.signalLight.firmwareUpdater.state {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(lang.t("settings.signalLight.firmwareFailedPrefix") + reason)
-                        .foregroundStyle(.red)
-                    Text(lang.t("settings.signalLight.firmwareFailedReassurance"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Button(lang.t("settings.signalLight.firmwareFlash")) {
-                isShowingFlashConfirmation = true
-            }
-            .disabled(selectedFirmwareURL == nil)
-            .confirmationDialog(
-                lang.t("settings.signalLight.firmwareConfirmTitle"),
-                isPresented: $isShowingFlashConfirmation
-            ) {
-                Button(lang.t("settings.signalLight.firmwareConfirmAction"), role: .destructive) {
-                    if let selectedFirmwareURL {
-                        model.signalLight.beginFirmwareUpdate(fileURL: selectedFirmwareURL)
-                    }
-                }
-                Button(lang.t("settings.general.cancel"), role: .cancel) {}
-            } message: {
-                Text(lang.t("settings.signalLight.firmwareConfirmMessage"))
+        case .idle:
+            EmptyView()
+
+        case .failed(let reason):
+            VStack(alignment: .leading, spacing: 4) {
+                Text(lang.t("settings.signalLight.firmwareFailedPrefix") + reason)
+                    .foregroundStyle(.red)
+                Text(lang.t("settings.signalLight.firmwareFailedReassurance"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
         case .transferring(let sent, let total):

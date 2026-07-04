@@ -269,7 +269,7 @@
 "settings.signalLight.firmwareFailedPrefix" = "刷写失败：";
 "settings.signalLight.firmwareFailedReassurance" = "信号灯仍在运行之前的固件，可以重试。";
 "settings.signalLight.lightSwitch" = "灯光开关";
-"settings.signalLight.renamePlaceholder" = "新名称";
+"settings.signalLight.renamePlaceholder" = "蓝牙名称";
 "settings.signalLight.rename" = "重命名";
 "settings.signalLight.renameReconnecting" = "设备正在重启并重新连接…";
 "settings.signalLight.calibrateWiring" = "校准接线";

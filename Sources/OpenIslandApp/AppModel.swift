@@ -463,6 +463,15 @@ final class AppModel {
                 return
             }
             UserDefaults.standard.set(data, forKey: Self.signalLightEffectsDefaultsKey)
+
+            // If the edit changed the effect for whichever bucket is
+            // currently showing, push it immediately instead of waiting for
+            // the next session-state transition — otherwise editing e.g.
+            // idle's effect while already idle looks like it did nothing.
+            let bucket = SignalLightBucketResolver.resolve(state)
+            if signalLightEnabled, !signalLight.isCalibrating, signalLightEffects[bucket] != oldValue[bucket] {
+                signalLight.send(signalLightEffects[bucket] ?? .defaultEffect(for: bucket))
+            }
         }
     }
 
