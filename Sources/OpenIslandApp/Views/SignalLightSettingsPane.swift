@@ -4,10 +4,12 @@ import UniformTypeIdentifiers
 import OpenIslandCore
 
 struct SignalLightSettingsPane: View {
-    var model: AppModel
+    @Bindable var model: AppModel
 
     @State private var selectedFirmwareURL: URL?
     @State private var isShowingFlashConfirmation = false
+    @State private var renameText = ""
+    @State private var isShowingRenameReconnectNotice = false
 
     private var lang: LanguageManager { model.lang }
 
@@ -23,11 +25,17 @@ struct SignalLightSettingsPane: View {
     var body: some View {
         Form {
             deviceSection
+            brightnessSection
             modesSection
             firmwareSection
         }
         .formStyle(.grouped)
         .navigationTitle(lang.t("settings.tab.signalLight"))
+        .onChange(of: model.signalLight.status) { _, newStatus in
+            if case .connected = newStatus {
+                isShowingRenameReconnectNotice = false
+            }
+        }
     }
 
     // MARK: Device
@@ -41,6 +49,8 @@ struct SignalLightSettingsPane: View {
                 statusBadge
             }
 
+            Toggle(lang.t("settings.signalLight.lightSwitch"), isOn: $model.signalLightEnabled)
+
             switch model.signalLight.status {
             case .unauthorized:
                 unauthorizedBanner
@@ -49,6 +59,7 @@ struct SignalLightSettingsPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             case .connected:
+                renameRow
                 Button(lang.t("settings.signalLight.disconnect"), role: .destructive) {
                     model.signalLight.disconnect()
                 }
@@ -59,6 +70,45 @@ struct SignalLightSettingsPane: View {
                     model.signalLight.startScan()
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var renameRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                TextField(lang.t("settings.signalLight.renamePlaceholder"), text: $renameText)
+                    .textFieldStyle(.roundedBorder)
+                Button(lang.t("settings.signalLight.rename")) {
+                    let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return }
+                    model.signalLight.sendRaw(SignalLightControlCommand.setName(trimmed))
+                    isShowingRenameReconnectNotice = true
+                    renameText = ""
+                }
+                .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if isShowingRenameReconnectNotice {
+                Text(lang.t("settings.signalLight.renameReconnecting"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var brightnessSection: some View {
+        Section(lang.t("settings.signalLight.brightness")) {
+            Slider(
+                value: Binding(
+                    get: { Double(model.signalLightBrightness) },
+                    set: { model.signalLightBrightness = Int($0.rounded()) }
+                ),
+                in: 0...100
+            )
+            Text("\(model.signalLightBrightness)%")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
