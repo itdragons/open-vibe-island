@@ -518,6 +518,7 @@ private struct SignalLightModeRow: View {
                 .layoutPriority(1)
                 .disabled(isTestDisabled)
             }
+            .onTapGesture {}
         }
         .padding(.vertical, 4)
     }
@@ -536,6 +537,5 @@ private struct SignalLightModeRow: View {
             }
         ))
         .toggleStyle(.button)
-        .buttonStyle(.plain)
     }
 }
