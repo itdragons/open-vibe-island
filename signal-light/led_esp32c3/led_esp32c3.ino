@@ -31,6 +31,8 @@ const int LED_OFF = 255; // 255 是全灭（高电平）
 const int PWM_MIN = 0;
 const int PWM_MAX = 255;
 
+int brightnessPercent = 100; // 0-100，通过 BRIGHTNESS 命令调节；App 重连后会重新同步
+
 int redValue = LED_ON;
 int yellowValue = LED_ON;
 int greenValue = LED_ON;
@@ -99,6 +101,8 @@ void sendConfigStatus();
 void handlePinTestCommand(String cmd);
 void endPinTestIfExpired(unsigned long nowMs);
 void handleSetNameCommand(String cmd);
+void handleBrightnessCommand(String cmd);
+int currentOnValue();
 
 class ServerCallback : public BLEServerCallbacks {
   void onDisconnect(BLEServer *server) {
@@ -309,6 +313,10 @@ void animateThinking(unsigned long nowMs) {
   }
 }
 
+int currentOnValue() {
+  return map(brightnessPercent, 0, 100, LED_OFF, LED_ON);
+}
+
 int breathValue(unsigned long nowMs, unsigned long periodMs) {
   unsigned long phase = nowMs % periodMs;
 
@@ -426,21 +434,23 @@ void animateCustomEffect(unsigned long nowMs) {
   int red = LED_OFF;
   int yellow = LED_OFF;
   int green = LED_OFF;
+  int onValue = currentOnValue();
 
   if (customEffectType == EFFECT_SOLID) {
-    applyCustomEffectValue(red, yellow, green, LED_ON, -1);
+    applyCustomEffectValue(red, yellow, green, onValue, -1);
   } else if (customEffectType == EFFECT_BLINK) {
     unsigned long interval = customEffectIntervalMs == 0 ? 1 : customEffectIntervalMs;
     bool on = (nowMs / interval) % 2 == 0;
-    applyCustomEffectValue(red, yellow, green, on ? LED_ON : LED_OFF, -1);
+    applyCustomEffectValue(red, yellow, green, on ? onValue : LED_OFF, -1);
   } else if (customEffectType == EFFECT_CYCLE) {
     unsigned long interval = customEffectIntervalMs == 0 ? 1 : customEffectIntervalMs;
     int activeIndex = (int)((nowMs / interval) % customEffectColorCount);
-    applyCustomEffectValue(red, yellow, green, LED_ON, activeIndex);
+    applyCustomEffectValue(red, yellow, green, onValue, activeIndex);
   } else if (customEffectType == EFFECT_BREATHE) {
     unsigned long period = customEffectIntervalMs == 0 ? 1 : customEffectIntervalMs;
-    int value = breathValue(nowMs, period);
-    applyCustomEffectValue(red, yellow, green, value, -1);
+    int rawValue = breathValue(nowMs, period);
+    int scaledValue = map(rawValue, LED_ON, LED_OFF, onValue, LED_OFF);
+    applyCustomEffectValue(red, yellow, green, scaledValue, -1);
   }
 
   setLights(red, yellow, green);
@@ -478,6 +488,11 @@ void handleCommand(String cmd) {
 
   if (cmd.startsWith("SETNAME:")) {
     handleSetNameCommand(original);
+    return;
+  }
+
+  if (cmd.startsWith("BRIGHTNESS:")) {
+    handleBrightnessCommand(cmd);
     return;
   }
 
@@ -860,4 +875,16 @@ void handleSetNameCommand(String cmd) {
   setOtaStatus("SETNAME ok, restarting");
   restartAfterRename = true;
   restartAfterRenameAtMs = millis() + 3000;
+}
+
+void handleBrightnessCommand(String cmd) {
+  // Format: BRIGHTNESS:<0-100>
+  int colonIndex = cmd.indexOf(':');
+  if (colonIndex < 0) {
+    setOtaStatus("BRIGHTNESS failed: malformed command");
+    return;
+  }
+
+  int percent = cmd.substring(colonIndex + 1).toInt();
+  brightnessPercent = constrain(percent, 0, 100);
 }
