@@ -34,12 +34,27 @@ final class SignalLightCoordinator: NSObject {
     private(set) var status: SignalLightConnectionStatus = .disconnected
     private(set) var discoveredDevices: [SignalLightDiscoveredDevice] = []
     private(set) var firmwareVersion: String?
+    private(set) var lastDeviceConfig: SignalLightDeviceConfig?
+    private(set) var lastStatusMessage: String?
     let firmwareUpdater = SignalLightFirmwareUpdater()
 
     /// Supplies the effect that should currently be showing. Called right
     /// after a (re)connection completes so the light can resync to current
     /// reality instead of being left on whatever it displayed before a drop.
     var currentEffectProvider: (() -> SignalLightEffect?)?
+
+    /// Supplies the brightness percent (0-100) that should currently be
+    /// applied. Resynced alongside the effect on every (re)connection.
+    var currentBrightnessProvider: (() -> Int?)?
+
+    /// While `true`, `AppModel` suppresses its automatic session-driven
+    /// effect push so a live session transition can't interrupt an
+    /// in-progress `PINTEST` wiring-calibration sequence.
+    var isCalibrating = false
+
+    /// Mirrors `AppModel.signalLightEnabled`. Governs whether a (re)connect
+    /// resyncs to the current effect or explicitly sends `OFF`.
+    var isLightSwitchedOn = true
 
     @ObservationIgnored private var centralManager: CBCentralManager?
     @ObservationIgnored private var connectedPeripheral: CBPeripheral?
@@ -95,6 +110,18 @@ final class SignalLightCoordinator: NSObject {
             return
         }
         let command = SignalLightCommandEncoder.encode(effect)
+        peripheral.writeValue(Data(command.utf8), for: characteristic, type: .withResponse)
+    }
+
+    /// Sends a raw text command (`PINTEST:`/`SETPIN:`/`SETNAME:`/`GETCONFIG`/
+    /// `BRIGHTNESS:`/`OFF`) — silently no-ops if not connected, same
+    /// fail-open behavior as `send(_:)`.
+    func sendRaw(_ command: String) {
+        guard let peripheral = connectedPeripheral,
+              let characteristic = commandCharacteristic,
+              peripheral.state == .connected else {
+            return
+        }
         peripheral.writeValue(Data(command.utf8), for: characteristic, type: .withResponse)
     }
 
@@ -233,9 +260,20 @@ extension SignalLightCoordinator: CBPeripheralDelegate {
             }
             status = .connected(name: peripheral.name ?? "Signal Light")
             firmwareUpdater.acknowledgeSuccess()
-            if let effect = currentEffectProvider?() {
-                send(effect)
+
+            if isLightSwitchedOn {
+                if let effect = currentEffectProvider?() {
+                    send(effect)
+                }
+            } else {
+                sendRaw(SignalLightControlCommand.off)
             }
+
+            if let brightness = currentBrightnessProvider?() {
+                sendRaw(SignalLightControlCommand.brightness(percent: brightness))
+            }
+
+            sendRaw(SignalLightControlCommand.getConfig)
         }
     }
 
@@ -254,7 +292,12 @@ extension SignalLightCoordinator: CBPeripheralDelegate {
             if characteristic.uuid == Self.infoCharacteristicUUID {
                 firmwareVersion = text
             } else if characteristic.uuid == Self.otaControlCharacteristicUUID {
-                firmwareUpdater.handleControlStatusUpdate(text)
+                if let config = SignalLightConfigDecoder.decode(text) {
+                    lastDeviceConfig = config
+                } else {
+                    lastStatusMessage = text
+                    firmwareUpdater.handleControlStatusUpdate(text)
+                }
             }
         }
     }
