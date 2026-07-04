@@ -44,12 +44,21 @@ enum LedMode {
   MODE_SUCCESS,
   MODE_ERROR,
   MODE_ALARM,
-  MODE_CUSTOM_EFFECT
+  MODE_CUSTOM_EFFECT,
+  MODE_PIN_TEST
 };
 
 LedMode currentMode = MODE_MANUAL;
 unsigned long lastFrameMs = 0;
 int frame = 0;
+
+// Wiring-calibration pin-test state (see handlePinTestCommand). Isolated
+// from the effect-rendering modes above so a PINTEST sequence can't be
+// silently overwritten by, or overwrite, a live EFFECT: push.
+int pinTestActivePin = -1;
+bool pinTestPriorLightOn = true;
+LedMode pinTestPriorMode = MODE_MANUAL;
+unsigned long pinTestDeadlineMs = 0;
 
 enum CustomEffectType {
   EFFECT_SOLID,
@@ -84,6 +93,8 @@ bool isSafeGpioPin(int pin);
 bool isNumericString(const String &text);
 void handleSetPinCommand(String cmd);
 void sendConfigStatus();
+void handlePinTestCommand(String cmd);
+void endPinTestIfExpired(unsigned long nowMs);
 
 class ServerCallback : public BLEServerCallbacks {
   void onDisconnect(BLEServer *server) {
@@ -209,6 +220,8 @@ void loop() {
 
   // checkButton(); // removed
 
+  endPinTestIfExpired(millis());
+
   if (!lightOn) {
     turnOffLights();
     return;
@@ -261,6 +274,8 @@ void updateLights() {
     animateAlarm(nowMs);
   } else if (currentMode == MODE_CUSTOM_EFFECT) {
     animateCustomEffect(nowMs);
+  } else if (currentMode == MODE_PIN_TEST) {
+    // Pin driven directly by handlePinTestCommand(); nothing to render here.
   }
 }
 
@@ -443,6 +458,11 @@ void handleCommand(String cmd) {
 
   if (cmd == "GETCONFIG") {
     sendConfigStatus();
+    return;
+  }
+
+  if (cmd.startsWith("PINTEST:")) {
+    handlePinTestCommand(cmd);
     return;
   }
 
@@ -742,4 +762,65 @@ void sendConfigStatus() {
                    ",G=" + String(led_green) +
                    ",NAME=" + bleName;
   setOtaStatus(status);
+}
+
+void handlePinTestCommand(String cmd) {
+  // Format: PINTEST:<pin>:<0|1>
+  int firstColon = cmd.indexOf(':');
+  int secondColon = cmd.indexOf(':', firstColon + 1);
+  if (firstColon < 0 || secondColon < 0) {
+    setOtaStatus("PINTEST failed: malformed command");
+    return;
+  }
+
+  String pinText = cmd.substring(firstColon + 1, secondColon);
+  String valueText = cmd.substring(secondColon + 1);
+  if (!isNumericString(pinText) || !isNumericString(valueText)) {
+    // Guards against e.g. "PINTEST:R:1" or a blank field silently
+    // parsing to pin/value 0 via String::toInt() — see Task 2's fix for
+    // the same class of bug in SETPIN, which is where isNumericString
+    // is defined.
+    setOtaStatus("PINTEST failed: malformed command");
+    return;
+  }
+
+  int pin = pinText.toInt();
+  int value = valueText.toInt();
+
+  if (!isSafeGpioPin(pin)) {
+    setOtaStatus("PINTEST failed: unsupported pin " + String(pin));
+    return;
+  }
+
+  if (currentMode != MODE_PIN_TEST) {
+    // Entering test mode for the first time this sequence: remember what to
+    // restore, and force the light on even if it was switched off, so the
+    // wizard works regardless of the light-switch state.
+    pinTestPriorLightOn = lightOn;
+    pinTestPriorMode = currentMode;
+    lightOn = true;
+    currentMode = MODE_PIN_TEST;
+  } else if (pinTestActivePin != -1 && pinTestActivePin != pin) {
+    // Switching to a different candidate pin mid-wizard: turn the previous
+    // one off so it doesn't stay lit if the app forgets to.
+    analogWrite(pinTestActivePin, LED_OFF);
+  }
+
+  pinMode(pin, OUTPUT);
+  analogWrite(pin, value == 1 ? LED_ON : LED_OFF);
+  pinTestActivePin = pin;
+  pinTestDeadlineMs = millis() + 5000;
+}
+
+void endPinTestIfExpired(unsigned long nowMs) {
+  if (currentMode != MODE_PIN_TEST || nowMs < pinTestDeadlineMs) {
+    return;
+  }
+
+  if (pinTestActivePin != -1) {
+    analogWrite(pinTestActivePin, LED_OFF);
+  }
+  pinTestActivePin = -1;
+  lightOn = pinTestPriorLightOn;
+  currentMode = pinTestPriorMode;
 }
