@@ -282,3 +282,5 @@
 "settings.signalLight.calibrateNotFoundPrefix" = "未能識別：";
 "settings.signalLight.calibrateRedo" = "重新開始";
 "settings.signalLight.calibrateDone" = "完成";
+"settings.signalLight.lightSection" = "燈光";
+"settings.signalLight.deviceManagement" = "裝置管理";

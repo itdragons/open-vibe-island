@@ -283,3 +283,5 @@
 "settings.signalLight.calibrateNotFoundPrefix" = "Couldn't identify: ";
 "settings.signalLight.calibrateRedo" = "Start Over";
 "settings.signalLight.calibrateDone" = "Done";
+"settings.signalLight.lightSection" = "Light";
+"settings.signalLight.deviceManagement" = "Device Management";
