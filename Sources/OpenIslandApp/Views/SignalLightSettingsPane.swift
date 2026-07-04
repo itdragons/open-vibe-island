@@ -561,5 +561,14 @@ private struct SignalLightModeRow: View {
             }
         ))
         .toggleStyle(.button)
+        .tint(uiColor(for: color))
+    }
+
+    private func uiColor(for color: SignalLightColor) -> Color {
+        switch color {
+        case .red: return .red
+        case .yellow: return .yellow
+        case .green: return .green
+        }
     }
 }
