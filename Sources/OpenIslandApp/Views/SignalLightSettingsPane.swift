@@ -483,7 +483,26 @@ private struct SignalLightModeRow: View {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
 
-            Picker(lang.t("settings.signalLight.effect"), selection: $effect.type) {
+            Picker(lang.t("settings.signalLight.effect"), selection: Binding(
+                get: { effect.type },
+                set: { newType in
+                    effect.type = newType
+                    if newType != .solid && effect.intervalMs == 0 {
+                        switch newType {
+                        case .cycle:
+                            effect.intervalMs = 200
+                        case .breathe:
+                            effect.intervalMs = 1200
+                        case .blink:
+                            effect.intervalMs = 600
+                        default:
+                            effect.intervalMs = 600
+                        }
+                    } else if newType == .solid {
+                        effect.intervalMs = 0
+                    }
+                }
+            )) {
                 Text(lang.t("settings.signalLight.solid")).tag(SignalLightEffectType.solid)
                 Text(lang.t("settings.signalLight.blink")).tag(SignalLightEffectType.blink)
                 Text(lang.t("settings.signalLight.cycle")).tag(SignalLightEffectType.cycle)
