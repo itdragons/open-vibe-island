@@ -272,8 +272,6 @@ extension SignalLightCoordinator: CBPeripheralDelegate {
             if let brightness = currentBrightnessProvider?() {
                 sendRaw(SignalLightControlCommand.brightness(percent: brightness))
             }
-
-            sendRaw(SignalLightControlCommand.getConfig)
         }
     }
 
