@@ -109,6 +109,7 @@ struct SignalLightSettingsPane: View {
             Toggle(lang.t("settings.signalLight.lightSwitch"), isOn: $model.signalLightEnabled)
 
             HStack {
+                Text(lang.t("settings.signalLight.lightBrightness"))
                 Slider(
                     value: Binding(
                         get: { Double(model.signalLightBrightness) },
@@ -231,10 +232,6 @@ struct SignalLightSettingsPane: View {
                 if case .connected = model.signalLight.status {
                     renameRow
                     Divider()
-                    Button(lang.t("settings.signalLight.calibrateWiring")) {
-                        beginCalibration()
-                    }
-                    Divider()
                     firmwareVersionRow
                     firmwareFilePickerRow
                     firmwareActionRow
@@ -251,9 +248,12 @@ struct SignalLightSettingsPane: View {
     private var firmwareVersionRow: some View {
         HStack {
             Text(lang.t("settings.signalLight.firmwareVersion"))
-            Spacer()
             Text(model.signalLight.firmwareVersion ?? lang.t("settings.signalLight.firmwareVersionUnknown"))
                 .foregroundStyle(.secondary)
+            Spacer()
+            Button(lang.t("settings.signalLight.calibrateWiring")) {
+                beginCalibration()
+            }
         }
     }
 
