@@ -13,6 +13,8 @@ struct SignalLightSettingsPane: View {
     @State private var wizard: SignalLightCalibrationWizard?
     @State private var isDeviceManagementExpanded = false
     @State private var testTimeoutTask: Task<Void, Never>?
+    @State private var expandedSignalLightBucket: SignalLightBucket?
+    @State private var testPreview: SignalLightTestPreview?
 
     private var lang: LanguageManager { model.lang }
 
@@ -125,6 +127,8 @@ struct SignalLightSettingsPane: View {
                     .frame(width: 40, alignment: .trailing)
             }
 
+            livePreviewRow
+
             ForEach(SignalLightBucket.allCases, id: \.self) { bucket in
                 SignalLightModeRow(
                     title: bucketTitle(bucket),
@@ -133,13 +137,19 @@ struct SignalLightSettingsPane: View {
                         get: { model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket) },
                         set: { model.signalLightEffects[bucket] = $0 }
                     ),
+                    isExpanded: Binding(
+                        get: { expandedSignalLightBucket == bucket },
+                        set: { expandedSignalLightBucket = $0 ? bucket : nil }
+                    ),
                     isTestDisabled: isTransferring,
                     onTest: { effect in
                         model.signalLight.send(effect)
+                        testPreview = SignalLightTestPreview(bucket: bucket, effect: effect)
                         testTimeoutTask?.cancel()
                         testTimeoutTask = Task {
                             try? await Task.sleep(for: .seconds(5))
                             guard !Task.isCancelled else { return }
+                            testPreview = nil
                             resyncLightSwitchState()
                         }
                     }
@@ -228,6 +238,24 @@ struct SignalLightSettingsPane: View {
         case .running: lang.t("settings.signalLight.bucket.running")
         case .idle: lang.t("settings.signalLight.bucket.idle")
         }
+    }
+
+    @ViewBuilder
+    private var livePreviewRow: some View {
+        let bucket = testPreview?.bucket ?? SignalLightBucketResolver.resolve(model.state)
+        let effect = testPreview?.effect ?? (model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket))
+        HStack(spacing: 12) {
+            SignalLightPreviewPill(effect: effect)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(lang.t("settings.signalLight.livePreview"))
+                    .font(.system(size: 12, weight: .semibold))
+                Text("\(bucketTitle(bucket)) · \(signalLightEffectSummary(effect, lang: lang))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: Device Management
@@ -478,76 +506,189 @@ struct SignalLightSettingsPane: View {
     }
 }
 
+/// While a row's Test button is active, the live-preview strip shows that
+/// effect instead of the resolved app-state bucket — mirroring what the
+/// physical light is actually doing during the test window.
+private struct SignalLightTestPreview {
+    let bucket: SignalLightBucket
+    let effect: SignalLightEffect
+}
+
+private func signalLightUIColor(for color: SignalLightColor) -> Color {
+    switch color {
+    case .red: return .red
+    case .yellow: return .yellow
+    case .green: return .green
+    }
+}
+
+private func signalLightEffectSummary(_ effect: SignalLightEffect, lang: LanguageManager) -> String {
+    let typeName: String
+    switch effect.type {
+    case .solid: typeName = lang.t("settings.signalLight.solid")
+    case .blink: typeName = lang.t("settings.signalLight.blink")
+    case .cycle: typeName = lang.t("settings.signalLight.cycle")
+    case .breathe: typeName = lang.t("settings.signalLight.breathe")
+    }
+    guard effect.type != .solid else { return typeName }
+    return "\(typeName) · \(effect.intervalMs)ms"
+}
+
+/// Animated preview of an effect's actual on-device behavior, used by the
+/// live-preview strip. Blink/cycle/breathe redraw on a timer derived from
+/// the effect's own interval so the pill's rhythm matches the real light.
+private struct SignalLightPreviewPill: View {
+    let effect: SignalLightEffect
+
+    private var stepInterval: TimeInterval {
+        max(0.05, Double(effect.intervalMs) / 1000)
+    }
+
+    var body: some View {
+        switch effect.type {
+        case .solid:
+            pill(activeColors: effect.colors)
+        case .blink:
+            TimelineView(.periodic(from: .now, by: stepInterval)) { context in
+                let step = Int(context.date.timeIntervalSinceReferenceDate / stepInterval)
+                pill(activeColors: step.isMultiple(of: 2) ? effect.colors : [])
+            }
+        case .cycle:
+            TimelineView(.periodic(from: .now, by: stepInterval)) { context in
+                let step = Int(context.date.timeIntervalSinceReferenceDate / stepInterval)
+                let active = effect.colors.isEmpty ? nil : effect.colors[step % effect.colors.count]
+                pill(activeColors: active.map { [$0] } ?? [])
+            }
+        case .breathe:
+            TimelineView(.animation) { context in
+                let period = stepInterval
+                let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
+                let brightness = (sin(phase * 2 * .pi) + 1) / 2
+                pill(activeColors: effect.colors, brightness: brightness)
+            }
+        }
+    }
+
+    private func pill(activeColors: [SignalLightColor], brightness: Double = 1) -> some View {
+        HStack(spacing: 4) {
+            ForEach([SignalLightColor.green, .yellow, .red], id: \.self) { color in
+                Circle()
+                    .fill(activeColors.contains(color) ? signalLightUIColor(for: color).opacity(brightness) : signalLightUIColor(for: color).opacity(0.15))
+                    .frame(width: 10, height: 10)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color.black.opacity(0.75))
+        .clipShape(Capsule())
+    }
+}
+
 private struct SignalLightModeRow: View {
     let title: String
     let lang: LanguageManager
     @Binding var effect: SignalLightEffect
+    @Binding var isExpanded: Bool
     let isTestDisabled: Bool
     let onTest: (SignalLightEffect) -> Void
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
+    private var accentColors: [SignalLightColor] {
+        [.green, .yellow, .red].filter(effect.colors.contains)
+    }
 
-            HStack(alignment: .center, spacing: 16) {
-                VStack(spacing: 4) {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            summaryRow
+            if isExpanded {
+                expandedEditor
+                    .padding(.bottom, 4)
+            }
+        }
+    }
+
+    private var summaryRow: some View {
+        Button {
+            isExpanded.toggle()
+        } label: {
+            HStack(spacing: 10) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+
+                HStack(spacing: 2) {
+                    ForEach(accentColors, id: \.self) { color in
+                        Circle()
+                            .fill(signalLightUIColor(for: color))
+                            .frame(width: 8, height: 8)
+                    }
+                }
+
+                Spacer()
+
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var expandedEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker(lang.t("settings.signalLight.effect"), selection: Binding(
+                get: { effect.type },
+                set: { newType in
+                    effect.type = newType
+                    if newType != .solid && effect.intervalMs == 0 {
+                        switch newType {
+                        case .cycle:
+                            effect.intervalMs = 200
+                        case .breathe:
+                            effect.intervalMs = 1200
+                        case .blink:
+                            effect.intervalMs = 600
+                        default:
+                            effect.intervalMs = 600
+                        }
+                    }
+                }
+            )) {
+                Text(lang.t("settings.signalLight.solid")).tag(SignalLightEffectType.solid)
+                Text(lang.t("settings.signalLight.blink")).tag(SignalLightEffectType.blink)
+                Text(lang.t("settings.signalLight.cycle")).tag(SignalLightEffectType.cycle)
+                Text(lang.t("settings.signalLight.breathe")).tag(SignalLightEffectType.breathe)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
                     colorToggle(.green, label: lang.t("settings.signalLight.green"))
                     colorToggle(.yellow, label: lang.t("settings.signalLight.yellow"))
                     colorToggle(.red, label: lang.t("settings.signalLight.red"))
                 }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 6)
-                .background(Color.black.opacity(0.75))
-                .clipShape(Capsule())
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Picker(lang.t("settings.signalLight.effect"), selection: Binding(
-                        get: { effect.type },
-                        set: { newType in
-                            effect.type = newType
-                            if newType != .solid && effect.intervalMs == 0 {
-                                switch newType {
-                                case .cycle:
-                                    effect.intervalMs = 200
-                                case .breathe:
-                                    effect.intervalMs = 1200
-                                case .blink:
-                                    effect.intervalMs = 600
-                                default:
-                                    effect.intervalMs = 600
-                                }
-                            }
-                        }
-                    )) {
-                        Text(lang.t("settings.signalLight.solid")).tag(SignalLightEffectType.solid)
-                        Text(lang.t("settings.signalLight.blink")).tag(SignalLightEffectType.blink)
-                        Text(lang.t("settings.signalLight.cycle")).tag(SignalLightEffectType.cycle)
-                        Text(lang.t("settings.signalLight.breathe")).tag(SignalLightEffectType.breathe)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+                Spacer()
 
-                    HStack(spacing: 10) {
-                        if effect.type != .solid {
-                            Stepper(
-                                "\(effect.intervalMs) ms",
-                                value: $effect.intervalMs,
-                                in: 100...3000,
-                                step: 100
-                            )
-                        }
-
-                        Button(lang.t("settings.signalLight.test")) {
-                            onTest(effect)
-                        }
-                        .disabled(isTestDisabled)
-                    }
+                if effect.type != .solid {
+                    let intervalLabel = "\(effect.intervalMs) ms"
+                    Stepper(
+                        intervalLabel,
+                        value: $effect.intervalMs,
+                        in: 100...3000,
+                        step: 100
+                    )
                 }
+
+                Button(lang.t("settings.signalLight.test")) {
+                    onTest(effect)
+                }
+                .disabled(isTestDisabled)
             }
-            .onTapGesture {}
         }
-        .padding(.vertical, 4)
+        .padding(.leading, 18)
+        .padding(.top, 8)
     }
 
     @ViewBuilder
@@ -562,26 +703,23 @@ private struct SignalLightModeRow: View {
                 effect.colors.append(color)
             }
         }
-        
+
         Button(action: action) {
-            Circle()
-                .fill(isSelected ? uiColor(for: color) : uiColor(for: color).opacity(0.15))
-                .frame(width: 14, height: 14)
-                .overlay(
-                    Circle()
-                        .strokeBorder(Color.white.opacity(isSelected ? 0.5 : 0.1), lineWidth: 1)
+            Text(label)
+                .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? Color.black.opacity(0.75) : Color.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? signalLightUIColor(for: color) : Color.clear)
                 )
-                .shadow(color: isSelected ? uiColor(for: color).opacity(0.8) : .clear, radius: 2)
+                .overlay(
+                    Capsule()
+                        .strokeBorder(isSelected ? Color.clear : Color.secondary.opacity(0.35), lineWidth: 1.5)
+                )
         }
         .buttonStyle(.plain)
         .help(label)
-    }
-
-    private func uiColor(for color: SignalLightColor) -> Color {
-        switch color {
-        case .red: return .red
-        case .yellow: return .yellow
-        case .green: return .green
-        }
     }
 }
