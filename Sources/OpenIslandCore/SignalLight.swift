@@ -64,7 +64,7 @@ public extension SignalLightEffect {
         case .idle:
             SignalLightEffect(type: .breathe, colors: [.green], intervalMs: 2000)
         case .running:
-            SignalLightEffect(type: .blink, colors: [.green], intervalMs: 400)
+            SignalLightEffect(type: .blink, colors: [.green], intervalMs: 200)
         case .needsApproval:
             SignalLightEffect(type: .breathe, colors: [.red], intervalMs: 1200)
         case .needsAnswer:
