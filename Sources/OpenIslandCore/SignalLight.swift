@@ -64,11 +64,11 @@ public extension SignalLightEffect {
         case .idle:
             SignalLightEffect(type: .breathe, colors: [.green], intervalMs: 2000)
         case .running:
-            SignalLightEffect(type: .blink, colors: [.green], intervalMs: 200)
+            SignalLightEffect(type: .blink, colors: [.yellow], intervalMs: 300)
         case .needsApproval:
-            SignalLightEffect(type: .breathe, colors: [.red], intervalMs: 1200)
+            SignalLightEffect(type: .breathe, colors: [.yellow, .red], intervalMs: 1200)
         case .needsAnswer:
-            SignalLightEffect(type: .breathe, colors: [.yellow], intervalMs: 1200)
+            SignalLightEffect(type: .breathe, colors: [.yellow, .green], intervalMs: 1200)
         }
     }
 }
