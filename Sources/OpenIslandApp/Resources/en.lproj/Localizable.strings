@@ -282,4 +282,5 @@
 "settings.signalLight.calibrateRedo" = "Start Over";
 "settings.signalLight.calibrateDone" = "Done";
 "settings.signalLight.lightSection" = "Light";
+"settings.signalLight.livePreview" = "Live Preview";
 "settings.signalLight.deviceManagement" = "Device Management";

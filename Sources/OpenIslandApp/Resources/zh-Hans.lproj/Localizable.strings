@@ -282,4 +282,5 @@
 "settings.signalLight.calibrateRedo" = "重新开始";
 "settings.signalLight.calibrateDone" = "完成";
 "settings.signalLight.lightSection" = "灯光";
+"settings.signalLight.livePreview" = "实时预览";
 "settings.signalLight.deviceManagement" = "设备管理";

@@ -1,0 +1,285 @@
+<style>
+  .sl-wrap { font-family: -apple-system, BlinkMacSystemFont, "SF Pro", sans-serif; }
+  .sl-card-mock {
+    background: #1c1c1e;
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .sl-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .sl-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .sl-dot.approval { background: #ff9f0a; }
+  .sl-dot.answer { background: #0a84ff; }
+  .sl-dot.running { background: #30d158; }
+  .sl-dot.idle { background: #8e8e93; }
+
+  /* vertical letter title (Option A) */
+  .sl-title-vert {
+    display: flex; flex-direction: column; align-items: center;
+    font-size: 9px; font-weight: 600; color: #eaeaea; line-height: 1.15;
+    width: 14px;
+  }
+  .sl-title-horiz { font-size: 12px; font-weight: 600; color: #eaeaea; white-space: nowrap; }
+
+  /* stacked (vertical) traffic light pill */
+  .sl-pill-vert {
+    display: flex; flex-direction: column; gap: 4px;
+    background: rgba(0,0,0,0.75); border-radius: 999px; padding: 6px 5px;
+  }
+  /* inline (horizontal) traffic light chips */
+  .sl-pill-horiz {
+    display: flex; gap: 5px;
+    background: rgba(0,0,0,0.75); border-radius: 999px; padding: 5px 8px;
+  }
+  .sl-chip { width: 11px; height: 11px; border-radius: 50%; }
+  .sl-chip.on.red { background: #ff453a; box-shadow: 0 0 4px rgba(255,69,58,0.8); }
+  .sl-chip.on.yellow { background: #ffd60a; box-shadow: 0 0 4px rgba(255,214,10,0.8); }
+  .sl-chip.on.green { background: #30d158; box-shadow: 0 0 4px rgba(48,209,88,0.8); }
+  .sl-chip.off { background: rgba(255,255,255,0.12); }
+
+  .sl-seg {
+    display: flex; background: rgba(255,255,255,0.08); border-radius: 6px; overflow: hidden;
+    font-size: 10px; color: #ccc;
+  }
+  .sl-seg span { padding: 4px 7px; }
+  .sl-seg span.active { background: rgba(255,255,255,0.18); color: #fff; font-weight: 600; }
+
+  .sl-mini { font-size: 10px; color: #999; }
+  .sl-test-btn {
+    font-size: 10px; padding: 4px 9px; border-radius: 5px; background: rgba(255,255,255,0.1);
+    color: #eee; white-space: nowrap;
+  }
+  .sl-chevron { color: #666; font-size: 12px; margin-left: auto; }
+  .sl-badge {
+    font-size: 9px; padding: 1px 6px; border-radius: 4px; background: rgba(48,209,88,0.18); color: #30d158;
+  }
+
+  .sl-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .sl-card2 {
+    background: rgba(255,255,255,0.04); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .sl-card2-head { display: flex; align-items: center; gap: 6px; }
+
+  .sl-preview-box {
+    display: flex; align-items: center; gap: 14px; background: rgba(255,255,255,0.04);
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 2px;
+  }
+</style>
+
+<h2>信号灯「灯光」区域 — 4 套布局方案</h2>
+<p class="subtitle">当前设计整体可用，这里是几个可选的改进方向。可以多选你觉得有意思的方向，也可以都不选，直接在终端里说想法。</p>
+
+<div class="cards" data-multiselect>
+
+  <div class="card" data-choice="A" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sl-wrap sl-card-mock">
+        <div class="sl-row">
+          <div class="sl-title-vert"><span>N</span><span>e</span><span>e</span><span>d</span><span>s</span><span>&nbsp;</span><span>A</span><span>p</span><span>p</span><span>r</span><span>o</span><span>v</span><span>a</span><span>l</span></div>
+          <div class="sl-pill-vert">
+            <div class="sl-chip on green"></div>
+            <div class="sl-chip on yellow"></div>
+            <div class="sl-chip off"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;flex:1;">
+            <div class="sl-seg"><span>Solid</span><span class="active">Blink</span><span>Cycle</span><span>Breathe</span></div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span class="sl-mini">600 ms ▲▼</span>
+              <span class="sl-test-btn">Test</span>
+            </div>
+          </div>
+        </div>
+        <div class="sl-row">
+          <div class="sl-title-vert"><span>R</span><span>u</span><span>n</span><span>n</span><span>i</span><span>n</span><span>g</span></div>
+          <div class="sl-pill-vert">
+            <div class="sl-chip off"></div>
+            <div class="sl-chip off"></div>
+            <div class="sl-chip on green"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;flex:1;">
+            <div class="sl-seg"><span class="active">Solid</span><span>Blink</span><span>Cycle</span><span>Breathe</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · 当前设计（基线）</h3>
+      <p>竖排逐字标题 + 竖排红绿灯胶囊 + 分段效果选择器。英文长词竖排会拉得很长，是主要观感问题。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="B" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sl-wrap sl-card-mock">
+        <div class="sl-row">
+          <div class="sl-dot approval"></div>
+          <div class="sl-title-horiz" style="width:88px;">Needs Approval</div>
+          <div class="sl-pill-horiz">
+            <div class="sl-chip on green"></div>
+            <div class="sl-chip on yellow"></div>
+            <div class="sl-chip off"></div>
+          </div>
+          <div class="sl-seg"><span>Solid</span><span class="active">Blink</span><span>Cycle</span><span>Breathe</span></div>
+          <span class="sl-mini">600ms</span>
+          <span class="sl-test-btn">Test</span>
+        </div>
+        <div class="sl-row">
+          <div class="sl-dot running"></div>
+          <div class="sl-title-horiz" style="width:88px;">Running</div>
+          <div class="sl-pill-horiz">
+            <div class="sl-chip off"></div>
+            <div class="sl-chip off"></div>
+            <div class="sl-chip on green"></div>
+          </div>
+          <div class="sl-seg"><span class="active">Solid</span><span>Blink</span><span>Cycle</span><span>Breathe</span></div>
+          <span class="sl-test-btn">Test</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · 单行精简（横排标题 + 状态色点 + 横排色块）</h3>
+      <p>标题恢复横排、用一个色点做状态识别；红绿灯从竖直胶囊改成横向色块，整行收窄成单行高度，行与行之间对齐成表格感。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="C" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sl-wrap sl-card-mock">
+        <div class="sl-grid2">
+          <div class="sl-card2">
+            <div class="sl-card2-head">
+              <div class="sl-dot approval"></div>
+              <div class="sl-title-horiz">Needs Approval</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <div class="sl-pill-horiz">
+                <div class="sl-chip on green"></div>
+                <div class="sl-chip on yellow"></div>
+                <div class="sl-chip off"></div>
+              </div>
+              <div class="sl-seg"><span>Solid</span><span class="active">Blink</span><span>Cycle</span><span>Breathe</span></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="sl-mini">600 ms ▲▼</span>
+              <span class="sl-test-btn">Test</span>
+            </div>
+          </div>
+          <div class="sl-card2">
+            <div class="sl-card2-head">
+              <div class="sl-dot answer"></div>
+              <div class="sl-title-horiz">Needs Answer</div>
+              <span class="sl-badge" style="margin-left:auto;">Active</span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <div class="sl-pill-horiz">
+                <div class="sl-chip off"></div>
+                <div class="sl-chip on yellow"></div>
+                <div class="sl-chip off"></div>
+              </div>
+              <div class="sl-seg"><span>Solid</span><span>Blink</span><span class="active">Cycle</span><span>Breathe</span></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="sl-mini">200 ms ▲▼</span>
+              <span class="sl-test-btn">Test</span>
+            </div>
+          </div>
+          <div class="sl-card2">
+            <div class="sl-card2-head">
+              <div class="sl-dot running"></div>
+              <div class="sl-title-horiz">Running</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <div class="sl-pill-horiz">
+                <div class="sl-chip off"></div>
+                <div class="sl-chip off"></div>
+                <div class="sl-chip on green"></div>
+              </div>
+              <div class="sl-seg"><span class="active">Solid</span><span>Blink</span><span>Cycle</span><span>Breathe</span></div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;">
+              <span class="sl-test-btn">Test</span>
+            </div>
+          </div>
+          <div class="sl-card2">
+            <div class="sl-card2-head">
+              <div class="sl-dot idle"></div>
+              <div class="sl-title-horiz">Idle</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <div class="sl-pill-horiz">
+                <div class="sl-chip off"></div>
+                <div class="sl-chip off"></div>
+                <div class="sl-chip off"></div>
+              </div>
+              <div class="sl-seg"><span class="active">Solid</span><span>Blink</span><span>Cycle</span><span>Breathe</span></div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;">
+              <span class="sl-test-btn">Test</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · 2×2 卡片网格</h3>
+      <p>4 个状态各自成卡片，标题在顶部横排，可加「Active」徽标标出当前生效的状态。更占纵向空间小、横向利用率高，扫描对比更容易，但卡片之间的分隔感会让区域整体变高变"重"。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="D" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sl-wrap sl-card-mock">
+        <div class="sl-preview-box">
+          <div class="sl-pill-vert">
+            <div class="sl-chip off"></div>
+            <div class="sl-chip on yellow"></div>
+            <div class="sl-chip off"></div>
+          </div>
+          <div>
+            <div class="sl-title-horiz">实时预览</div>
+            <div class="sl-mini">当前状态：Needs Answer · Cycle</div>
+          </div>
+        </div>
+        <div class="sl-row">
+          <div class="sl-dot approval"></div>
+          <div class="sl-title-horiz" style="width:96px;">Needs Approval</div>
+          <div class="sl-pill-horiz">
+            <div class="sl-chip on green"></div>
+            <div class="sl-chip on yellow"></div>
+            <div class="sl-chip off"></div>
+          </div>
+          <span class="sl-mini">Blink · 600ms</span>
+          <span class="sl-chevron">⌄</span>
+        </div>
+        <div class="sl-row">
+          <div class="sl-dot answer"></div>
+          <div class="sl-title-horiz" style="width:96px;">Needs Answer</div>
+          <div class="sl-pill-horiz">
+            <div class="sl-chip off"></div>
+            <div class="sl-chip on yellow"></div>
+            <div class="sl-chip off"></div>
+          </div>
+          <span class="sl-mini">Cycle · 200ms</span>
+          <span class="sl-chevron">⌃</span>
+        </div>
+        <div style="padding:8px 10px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:10px;color:#aaa;">
+          展开态：完整分段选择器 + 步进器 + Test 按钮（同当前设计）
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>D · 顶部实时预览 + 折叠式列表</h3>
+      <p>顶部放一个"当前生效效果"的实时预览条，下面 4 行只显示状态名 + 色块摘要 + 效果文字，点击展开才出现完整编辑器（复用文件里 DisclosureGroup 的既有模式）。列表更紧凑，但多了一次点击才能改参数。</p>
+    </div>
+  </div>
+
+</div>
