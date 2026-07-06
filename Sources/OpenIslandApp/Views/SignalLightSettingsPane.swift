@@ -490,57 +490,60 @@ private struct SignalLightModeRow: View {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
 
-            Picker(lang.t("settings.signalLight.effect"), selection: Binding(
-                get: { effect.type },
-                set: { newType in
-                    effect.type = newType
-                    if newType != .solid && effect.intervalMs == 0 {
-                        switch newType {
-                        case .cycle:
-                            effect.intervalMs = 200
-                        case .breathe:
-                            effect.intervalMs = 1200
-                        case .blink:
-                            effect.intervalMs = 600
-                        default:
-                            effect.intervalMs = 600
+            HStack(alignment: .center, spacing: 16) {
+                VStack(spacing: 4) {
+                    colorToggle(.green, label: lang.t("settings.signalLight.green"))
+                    colorToggle(.yellow, label: lang.t("settings.signalLight.yellow"))
+                    colorToggle(.red, label: lang.t("settings.signalLight.red"))
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 6)
+                .background(Color.black.opacity(0.75))
+                .clipShape(Capsule())
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker(lang.t("settings.signalLight.effect"), selection: Binding(
+                        get: { effect.type },
+                        set: { newType in
+                            effect.type = newType
+                            if newType != .solid && effect.intervalMs == 0 {
+                                switch newType {
+                                case .cycle:
+                                    effect.intervalMs = 200
+                                case .breathe:
+                                    effect.intervalMs = 1200
+                                case .blink:
+                                    effect.intervalMs = 600
+                                default:
+                                    effect.intervalMs = 600
+                                }
+                            }
                         }
+                    )) {
+                        Text(lang.t("settings.signalLight.solid")).tag(SignalLightEffectType.solid)
+                        Text(lang.t("settings.signalLight.blink")).tag(SignalLightEffectType.blink)
+                        Text(lang.t("settings.signalLight.cycle")).tag(SignalLightEffectType.cycle)
+                        Text(lang.t("settings.signalLight.breathe")).tag(SignalLightEffectType.breathe)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    HStack(spacing: 10) {
+                        if effect.type != .solid {
+                            Stepper(
+                                "\(effect.intervalMs) ms",
+                                value: $effect.intervalMs,
+                                in: 100...3000,
+                                step: 100
+                            )
+                        }
+
+                        Button(lang.t("settings.signalLight.test")) {
+                            onTest(effect)
+                        }
+                        .disabled(isTestDisabled)
                     }
                 }
-            )) {
-                Text(lang.t("settings.signalLight.solid")).tag(SignalLightEffectType.solid)
-                Text(lang.t("settings.signalLight.blink")).tag(SignalLightEffectType.blink)
-                Text(lang.t("settings.signalLight.cycle")).tag(SignalLightEffectType.cycle)
-                Text(lang.t("settings.signalLight.breathe")).tag(SignalLightEffectType.breathe)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            HStack(spacing: 10) {
-                colorToggle(.green, label: lang.t("settings.signalLight.green"))
-                    .layoutPriority(1)
-                colorToggle(.yellow, label: lang.t("settings.signalLight.yellow"))
-                    .layoutPriority(1)
-                colorToggle(.red, label: lang.t("settings.signalLight.red"))
-                    .layoutPriority(1)
-
-                Spacer(minLength: 8)
-
-                if effect.type != .solid {
-                    Stepper(
-                        "\(effect.intervalMs) ms",
-                        value: $effect.intervalMs,
-                        in: 100...3000,
-                        step: 100
-                    )
-                    .layoutPriority(0)
-                }
-
-                Button(lang.t("settings.signalLight.test")) {
-                    onTest(effect)
-                }
-                .layoutPriority(1)
-                .disabled(isTestDisabled)
             }
             .onTapGesture {}
         }
@@ -560,13 +563,18 @@ private struct SignalLightModeRow: View {
             }
         }
         
-        if isSelected {
-            Button(label, action: action)
-                .buttonStyle(.borderedProminent)
-                .tint(uiColor(for: color))
-        } else {
-            Button(label, action: action)
+        Button(action: action) {
+            Circle()
+                .fill(isSelected ? uiColor(for: color) : uiColor(for: color).opacity(0.15))
+                .frame(width: 14, height: 14)
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.white.opacity(isSelected ? 0.5 : 0.1), lineWidth: 1)
+                )
+                .shadow(color: isSelected ? uiColor(for: color).opacity(0.8) : .clear, radius: 2)
         }
+        .buttonStyle(.plain)
+        .help(label)
     }
 
     private func uiColor(for color: SignalLightColor) -> Color {
