@@ -62,13 +62,13 @@ public extension SignalLightEffect {
     static func defaultEffect(for bucket: SignalLightBucket) -> SignalLightEffect {
         switch bucket {
         case .idle:
-            SignalLightEffect(type: .solid, colors: [.green], intervalMs: 0)
+            SignalLightEffect(type: .breathe, colors: [.green], intervalMs: 2000)
         case .running:
-            SignalLightEffect(type: .blink, colors: [.yellow], intervalMs: 600)
+            SignalLightEffect(type: .cycle, colors: [.green], intervalMs: 200)
         case .needsApproval:
             SignalLightEffect(type: .breathe, colors: [.red], intervalMs: 1200)
         case .needsAnswer:
-            SignalLightEffect(type: .cycle, colors: [.red, .yellow, .green], intervalMs: 200)
+            SignalLightEffect(type: .breathe, colors: [.yellow], intervalMs: 1200)
         }
     }
 }
