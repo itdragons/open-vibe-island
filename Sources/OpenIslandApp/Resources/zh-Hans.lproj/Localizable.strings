@@ -259,6 +259,12 @@
 "settings.signalLight.firmwareNeedsConnection" = "请先连接设备。";
 "settings.signalLight.firmwareVersion" = "固件版本";
 "settings.signalLight.firmwareVersionUnknown" = "未知";
+"settings.signalLight.checkForUpdates" = "检查更新";
+"settings.signalLight.checkingForUpdates" = "正在检查更新…";
+"settings.signalLight.firmwareUpToDate" = "已是最新版本";
+"settings.signalLight.firmwareUpdateAvailablePrefix" = "发现新版本：";
+"settings.signalLight.downloadAndUpdate" = "下载并更新";
+"settings.signalLight.firmwareCheckFailedPrefix" = "检查更新失败：";
 "settings.signalLight.firmwareChooseFile" = "选择固件文件…";
 "settings.signalLight.firmwareChangeFile" = "更换";
 "settings.signalLight.firmwareFlash" = "刷入固件";

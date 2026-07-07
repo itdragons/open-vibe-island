@@ -15,6 +15,8 @@ struct SignalLightSettingsPane: View {
     @State private var testTimeoutTask: Task<Void, Never>?
     @State private var expandedSignalLightBucket: SignalLightBucket?
     @State private var testPreview: SignalLightTestPreview?
+    @State private var isDownloadingFirmwareUpdate = false
+    @State private var firmwareDownloadErrorMessage: String?
 
     private var lang: LanguageManager { model.lang }
 
@@ -268,6 +270,7 @@ struct SignalLightSettingsPane: View {
                     renameRow
                     Divider()
                     firmwareVersionRow
+                    firmwareUpdateCheckRow
                     firmwareFilePickerRow
                     firmwareActionRow
                 } else {
@@ -288,6 +291,75 @@ struct SignalLightSettingsPane: View {
             Spacer()
             Button(lang.t("settings.signalLight.calibrateWiring")) {
                 beginCalibration()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var firmwareUpdateCheckRow: some View {
+        switch model.signalLight.firmwareUpdateChecker.state {
+        case .idle:
+            Button(lang.t("settings.signalLight.checkForUpdates")) {
+                checkForFirmwareUpdates()
+            }
+            .disabled(isTransferring)
+
+        case .checking:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(lang.t("settings.signalLight.checkingForUpdates"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+        case .upToDate:
+            HStack {
+                Text(lang.t("settings.signalLight.firmwareUpToDate"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(lang.t("settings.signalLight.checkForUpdates")) {
+                    checkForFirmwareUpdates()
+                }
+                .disabled(isTransferring)
+            }
+
+        case .updateAvailable(let version, let notes):
+            VStack(alignment: .leading, spacing: 4) {
+                Text(lang.t("settings.signalLight.firmwareUpdateAvailablePrefix") + version)
+                    .font(.system(size: 12, weight: .semibold))
+                if let notes, !notes.isEmpty {
+                    Text(notes)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 8) {
+                    if isDownloadingFirmwareUpdate {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button(lang.t("settings.signalLight.downloadAndUpdate")) {
+                            downloadAndFlashLatestFirmware()
+                        }
+                        .disabled(isTransferring)
+                    }
+                    if let firmwareDownloadErrorMessage {
+                        Text(firmwareDownloadErrorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+
+        case .failed(let reason):
+            HStack {
+                Text(lang.t("settings.signalLight.firmwareCheckFailedPrefix") + reason)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                Spacer()
+                Button(lang.t("settings.signalLight.checkForUpdates")) {
+                    checkForFirmwareUpdates()
+                }
+                .disabled(isTransferring)
             }
         }
     }
@@ -368,6 +440,28 @@ struct SignalLightSettingsPane: View {
             }
             Button(lang.t("settings.general.cancel"), role: .destructive) {
                 model.signalLight.cancelFirmwareUpdate()
+            }
+        }
+    }
+
+    private func checkForFirmwareUpdates() {
+        firmwareDownloadErrorMessage = nil
+        Task {
+            await model.signalLight.firmwareUpdateChecker.checkForUpdates(currentVersion: model.signalLight.firmwareVersion)
+        }
+    }
+
+    private func downloadAndFlashLatestFirmware() {
+        firmwareDownloadErrorMessage = nil
+        isDownloadingFirmwareUpdate = true
+        Task {
+            defer { isDownloadingFirmwareUpdate = false }
+            do {
+                let fileURL = try await model.signalLight.firmwareUpdateChecker.downloadLatestBinary()
+                selectedFirmwareURL = fileURL
+                isShowingFlashConfirmation = true
+            } catch {
+                firmwareDownloadErrorMessage = error.localizedDescription
             }
         }
     }

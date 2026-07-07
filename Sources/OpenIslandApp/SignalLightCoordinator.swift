@@ -37,6 +37,7 @@ final class SignalLightCoordinator: NSObject {
     private(set) var lastDeviceConfig: SignalLightDeviceConfig?
     private(set) var lastStatusMessage: String?
     let firmwareUpdater = SignalLightFirmwareUpdater()
+    let firmwareUpdateChecker = SignalLightFirmwareUpdateChecker()
 
     /// Supplies the effect that should currently be showing. Called right
     /// after a (re)connection completes so the light can resync to current

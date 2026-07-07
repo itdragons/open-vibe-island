@@ -258,6 +258,12 @@
 "settings.signalLight.firmwareNeedsConnection" = "請先連接裝置。";
 "settings.signalLight.firmwareVersion" = "韌體版本";
 "settings.signalLight.firmwareVersionUnknown" = "未知";
+"settings.signalLight.checkForUpdates" = "檢查更新";
+"settings.signalLight.checkingForUpdates" = "正在檢查更新…";
+"settings.signalLight.firmwareUpToDate" = "已是最新版本";
+"settings.signalLight.firmwareUpdateAvailablePrefix" = "發現新版本：";
+"settings.signalLight.downloadAndUpdate" = "下載並更新";
+"settings.signalLight.firmwareCheckFailedPrefix" = "檢查更新失敗：";
 "settings.signalLight.firmwareChooseFile" = "選擇韌體檔案…";
 "settings.signalLight.firmwareChangeFile" = "更換";
 "settings.signalLight.firmwareFlash" = "燒錄韌體";

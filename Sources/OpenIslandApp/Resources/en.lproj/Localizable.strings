@@ -259,6 +259,12 @@
 "settings.signalLight.firmwareNeedsConnection" = "Connect a device first.";
 "settings.signalLight.firmwareVersion" = "Firmware Version";
 "settings.signalLight.firmwareVersionUnknown" = "Unknown";
+"settings.signalLight.checkForUpdates" = "Check for Updates";
+"settings.signalLight.checkingForUpdates" = "Checking for updates…";
+"settings.signalLight.firmwareUpToDate" = "You're on the latest version";
+"settings.signalLight.firmwareUpdateAvailablePrefix" = "Version available: ";
+"settings.signalLight.downloadAndUpdate" = "Download & Update";
+"settings.signalLight.firmwareCheckFailedPrefix" = "Couldn't check for updates: ";
 "settings.signalLight.firmwareChooseFile" = "Choose Firmware File…";
 "settings.signalLight.firmwareChangeFile" = "Change";
 "settings.signalLight.firmwareFlash" = "Flash Firmware";
