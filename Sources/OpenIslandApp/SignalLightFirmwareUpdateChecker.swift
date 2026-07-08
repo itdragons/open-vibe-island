@@ -12,9 +12,19 @@ enum SignalLightFirmwareUpdateCheckState: Equatable {
     case failed(String)
 }
 
+/// Outcome of loading the full changelog — independent of any connected
+/// device, so it can be viewed at any time.
+enum SignalLightFirmwareChangelogState: Equatable {
+    case idle
+    case loading
+    case loaded([String])
+    case failed(String)
+}
+
 private struct SignalLightFirmwareManifest: Decodable {
     let version: String
     let notes: String?
+    let history: [String]?
 }
 
 /// Checks a fixed pair of URLs on the `wg` branch of the signal-light's
@@ -28,8 +38,10 @@ private struct SignalLightFirmwareManifest: Decodable {
 final class SignalLightFirmwareUpdateChecker {
     private static let manifestURL = URL(string: "https://raw.githubusercontent.com/itdragons/open-vibe-island/wg/signal-light/firmware/version.json")!
     private static let binaryURL = URL(string: "https://raw.githubusercontent.com/itdragons/open-vibe-island/wg/signal-light/firmware/signal-light.bin")!
+    private static let manifestTimeoutSeconds: TimeInterval = 5
 
     private(set) var state: SignalLightFirmwareUpdateCheckState = .idle
+    private(set) var changelogState: SignalLightFirmwareChangelogState = .idle
 
     func checkForUpdates(currentVersion: String?) async {
         guard let currentVersion, let current = SignalLightFirmwareVersion(currentVersion) else {
@@ -39,12 +51,7 @@ final class SignalLightFirmwareUpdateChecker {
 
         state = .checking
         do {
-            let (data, response) = try await URLSession.shared.data(from: Self.manifestURL)
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                state = .failed("Couldn't connect to update server")
-                return
-            }
-            let manifest = try JSONDecoder().decode(SignalLightFirmwareManifest.self, from: data)
+            let manifest = try await fetchManifest()
             guard let latest = SignalLightFirmwareVersion(manifest.version) else {
                 state = .failed("Update information is malformed")
                 return
@@ -56,6 +63,29 @@ final class SignalLightFirmwareUpdateChecker {
         } catch {
             state = .failed("Couldn't connect to update server")
         }
+    }
+
+    /// Loads the full version history for display — doesn't require a
+    /// connected device or a prior `checkForUpdates` call.
+    func loadChangelog() async {
+        changelogState = .loading
+        do {
+            let manifest = try await fetchManifest()
+            let latestEntry = "\(manifest.version): \(manifest.notes ?? "")"
+            changelogState = .loaded([latestEntry] + (manifest.history ?? []))
+        } catch {
+            changelogState = .failed("Couldn't load changelog")
+        }
+    }
+
+    private func fetchManifest() async throws -> SignalLightFirmwareManifest {
+        var request = URLRequest(url: Self.manifestURL)
+        request.timeoutInterval = Self.manifestTimeoutSeconds
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw SignalLightFirmwareUpdateCheckError.requestFailed
+        }
+        return try JSONDecoder().decode(SignalLightFirmwareManifest.self, from: data)
     }
 
     /// Downloads the latest binary to a fresh temporary file and returns its
@@ -77,10 +107,12 @@ final class SignalLightFirmwareUpdateChecker {
 }
 
 enum SignalLightFirmwareUpdateCheckError: LocalizedError {
+    case requestFailed
     case downloadFailed
 
     var errorDescription: String? {
         switch self {
+        case .requestFailed: "Couldn't reach the update server"
         case .downloadFailed: "Couldn't download the firmware file"
         }
     }

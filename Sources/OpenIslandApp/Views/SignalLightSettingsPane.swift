@@ -17,6 +17,7 @@ struct SignalLightSettingsPane: View {
     @State private var testPreview: SignalLightTestPreview?
     @State private var isDownloadingFirmwareUpdate = false
     @State private var firmwareDownloadErrorMessage: String?
+    @State private var isShowingChangelog = false
 
     private var lang: LanguageManager { model.lang }
 
@@ -49,6 +50,9 @@ struct SignalLightSettingsPane: View {
             if let wizard {
                 calibrationWizardView(wizard)
             }
+        }
+        .sheet(isPresented: $isShowingChangelog) {
+            changelogSheet
         }
     }
 
@@ -266,6 +270,7 @@ struct SignalLightSettingsPane: View {
     private var deviceManagementSection: some View {
         Section {
             DisclosureGroup(lang.t("settings.signalLight.deviceManagement"), isExpanded: $isDeviceManagementExpanded) {
+                changelogRow
                 if case .connected = model.signalLight.status {
                     renameRow
                     Divider()
@@ -280,6 +285,54 @@ struct SignalLightSettingsPane: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var changelogRow: some View {
+        Button(lang.t("settings.signalLight.viewChangelog")) {
+            isShowingChangelog = true
+            Task {
+                await model.signalLight.firmwareUpdateChecker.loadChangelog()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var changelogSheet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(lang.t("settings.signalLight.viewChangelog"))
+                .font(.headline)
+
+            switch model.signalLight.firmwareUpdateChecker.changelogState {
+            case .idle, .loading:
+                ProgressView()
+            case .failed(let reason):
+                Text(reason)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            case .loaded(let entries):
+                if entries.isEmpty {
+                    Text(lang.t("settings.signalLight.changelogEmpty"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(entries, id: \.self) { entry in
+                                Text(entry)
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Button(lang.t("settings.signalLight.close")) {
+                isShowingChangelog = false
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 320, minHeight: 220)
     }
 
     @ViewBuilder

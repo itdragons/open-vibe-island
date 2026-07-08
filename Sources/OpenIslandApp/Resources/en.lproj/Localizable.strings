@@ -259,6 +259,9 @@
 "settings.signalLight.firmwareNeedsConnection" = "Connect a device first.";
 "settings.signalLight.firmwareVersion" = "Firmware Version";
 "settings.signalLight.firmwareVersionUnknown" = "Unknown";
+"settings.signalLight.viewChangelog" = "View Version History";
+"settings.signalLight.changelogEmpty" = "No version history yet";
+"settings.signalLight.close" = "Close";
 "settings.signalLight.checkForUpdates" = "Check for Updates";
 "settings.signalLight.checkingForUpdates" = "Checking for updates…";
 "settings.signalLight.firmwareUpToDate" = "You're on the latest version";

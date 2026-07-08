@@ -258,6 +258,9 @@
 "settings.signalLight.firmwareNeedsConnection" = "請先連接裝置。";
 "settings.signalLight.firmwareVersion" = "韌體版本";
 "settings.signalLight.firmwareVersionUnknown" = "未知";
+"settings.signalLight.viewChangelog" = "查看版本歷史";
+"settings.signalLight.changelogEmpty" = "尚無版本歷史";
+"settings.signalLight.close" = "關閉";
 "settings.signalLight.checkForUpdates" = "檢查更新";
 "settings.signalLight.checkingForUpdates" = "正在檢查更新…";
 "settings.signalLight.firmwareUpToDate" = "已是最新版本";
