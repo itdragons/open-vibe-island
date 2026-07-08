@@ -55,6 +55,15 @@ final class SignalLightFirmwareUpdateChecker {
     private(set) var state: SignalLightFirmwareUpdateCheckState = .idle
     private(set) var changelogState: SignalLightFirmwareChangelogState = .idle
 
+    /// Clears a stale check result on disconnect — a reconnect may be to a
+    /// different physical device with different firmware, so a prior
+    /// `.upToDate`/`.updateAvailable` result can't be trusted to still apply.
+    /// Leaves `changelogState` alone since the changelog isn't tied to any
+    /// particular device's version.
+    func reset() {
+        state = .idle
+    }
+
     func checkForUpdates(currentVersion: String?) async {
         guard let currentVersion, let current = SignalLightFirmwareVersion(currentVersion) else {
             state = .failed("Current firmware version is unknown")

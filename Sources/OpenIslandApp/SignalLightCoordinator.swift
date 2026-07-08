@@ -215,6 +215,7 @@ extension SignalLightCoordinator: CBCentralManagerDelegate {
             otaDataCharacteristic = nil
             firmwareVersion = nil
             firmwareUpdater.handleUnexpectedDisconnect()
+            firmwareUpdateChecker.reset()
             status = .disconnected
             attemptAutoReconnect()
         }
