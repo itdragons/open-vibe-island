@@ -36,15 +36,20 @@ private struct SignalLightFirmwareManifest: Decodable {
 @MainActor
 @Observable
 final class SignalLightFirmwareUpdateChecker {
-    private static let manifestURL = URL(string: "https://raw.githubusercontent.com/itdragons/open-vibe-island/wg/signal-light/firmware/version.json")!
-    private static let binaryURL = URL(string: "https://raw.githubusercontent.com/itdragons/open-vibe-island/wg/signal-light/firmware/signal-light.bin")!
+    // jsDelivr's GitHub CDN mirror, not raw.githubusercontent.com directly:
+    // direct connections to raw.githubusercontent.com reliably stall
+    // mid-transfer on some networks (reproduced with curl --noproxy '*',
+    // consistently stuck at ~40KB into the 647KB binary — a network-level
+    // block on that host, not an app or timeout-tuning issue). jsDelivr's
+    // edge for the same repo/branch/path was reliable across repeated tests.
+    private static let manifestURL = URL(string: "https://cdn.jsdelivr.net/gh/itdragons/open-vibe-island@wg/signal-light/firmware/version.json")!
+    private static let binaryURL = URL(string: "https://cdn.jsdelivr.net/gh/itdragons/open-vibe-island@wg/signal-light/firmware/signal-light.bin")!
     private static let manifestTimeoutSeconds: TimeInterval = 5
     private static let binaryTimeoutSeconds: TimeInterval = 15
-    /// Connection establishment to raw.githubusercontent.com intermittently
-    /// stalls to a full timeout on some networks (observed on both dataTask
-    /// and downloadTask — not specific to either), then succeeds immediately
-    /// on the very next attempt. A short per-attempt timeout plus a couple of
-    /// retries turns that into a non-issue instead of a multi-minute hang.
+    /// Defense in depth against ordinary transient network hiccups — the
+    /// mid-transfer block above is the reason a *host* switch was needed,
+    /// but a short timeout + retry is still worth keeping for garden-variety
+    /// flakiness on any host.
     private static let maxAttempts = 3
 
     private(set) var state: SignalLightFirmwareUpdateCheckState = .idle
