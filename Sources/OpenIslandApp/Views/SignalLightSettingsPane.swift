@@ -270,7 +270,6 @@ struct SignalLightSettingsPane: View {
     private var deviceManagementSection: some View {
         Section {
             DisclosureGroup(lang.t("settings.signalLight.deviceManagement"), isExpanded: $isDeviceManagementExpanded) {
-                changelogRow
                 if case .connected = model.signalLight.status {
                     renameRow
                     Divider()
@@ -287,13 +286,10 @@ struct SignalLightSettingsPane: View {
         }
     }
 
-    @ViewBuilder
-    private var changelogRow: some View {
-        Button(lang.t("settings.signalLight.viewChangelog")) {
-            isShowingChangelog = true
-            Task {
-                await model.signalLight.firmwareUpdateChecker.loadChangelog()
-            }
+    private func presentChangelog() {
+        isShowingChangelog = true
+        Task {
+            await model.signalLight.firmwareUpdateChecker.loadChangelog()
         }
     }
 
@@ -339,8 +335,18 @@ struct SignalLightSettingsPane: View {
     private var firmwareVersionRow: some View {
         HStack {
             Text(lang.t("settings.signalLight.firmwareVersion"))
-            Text(model.signalLight.firmwareVersion ?? lang.t("settings.signalLight.firmwareVersionUnknown"))
+            Button {
+                presentChangelog()
+            } label: {
+                HStack(spacing: 3) {
+                    Text(model.signalLight.firmwareVersion ?? lang.t("settings.signalLight.firmwareVersionUnknown"))
+                    Image(systemName: "info.circle")
+                        .font(.caption2)
+                }
                 .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(lang.t("settings.signalLight.viewChangelog"))
             Spacer()
             Button(lang.t("settings.signalLight.calibrateWiring")) {
                 beginCalibration()
