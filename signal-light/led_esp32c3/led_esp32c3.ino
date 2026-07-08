@@ -31,6 +31,19 @@ const int LED_OFF = 255; // 255 是全灭（高电平）
 const int PWM_MIN = 0;
 const int PWM_MAX = 255;
 
+// Timing constants (ms) — animation cadence and restart/timeout delays.
+const unsigned long GREEN_BLINK_INTERVAL_MS = 600;
+const unsigned long BUSY_BLINK_INTERVAL_MS = 600;
+const unsigned long THINKING_FRAME_INTERVAL_MS = 130;
+const unsigned long ERROR_BLINK_INTERVAL_MS = 140;
+const unsigned long ALARM_BLINK_INTERVAL_MS = 180;
+const unsigned long WORKING_BREATHE_PERIOD_MS = 2400;
+const unsigned long OTA_RESTART_DELAY_MS = 3000;
+const unsigned long RENAME_RESTART_DELAY_MS = 3000;
+const unsigned long PIN_TEST_TIMEOUT_MS = 5000;
+const unsigned long SERIAL_ENUMERATION_TIMEOUT_MS = 3000;
+const unsigned long BLE_RECONNECT_DELAY_MS = 100;
+
 int brightnessPercent = 100; // 0-100，通过 BRIGHTNESS 命令调节；App 重连后会重新同步
 
 int redValue = LED_ON;
@@ -86,11 +99,14 @@ bool restartAfterRename = false;
 unsigned long restartAfterRenameAtMs = 0;
 
 void handleCommand(String cmd);
+bool handleModeCommand(String cmd);
+void handleManualLedCommand(String cmd);
 void handleOtaControl(String cmd);
 void handleOtaData(BLECharacteristic *characteristic);
 void setOtaStatus(const String &message);
 void startMode(LedMode mode);
 bool isCommand(String cmd, String a, String b = "", String c = "", String d = "");
+bool splitCommandFields(const String &cmd, char sep, String fields[], int fieldCount);
 void handleEffectCommand(String cmd);
 void animateCustomEffect(unsigned long nowMs);
 void applyCustomEffectValue(int &red, int &yellow, int &green, int onValue, int activeIndex);
@@ -106,7 +122,7 @@ int currentOnValue();
 
 class ServerCallback : public BLEServerCallbacks {
   void onDisconnect(BLEServer *server) {
-    delay(100);
+    delay(BLE_RECONNECT_DELAY_MS);
     server->startAdvertising();
   }
 };
@@ -135,7 +151,7 @@ void setup() {
   Serial.begin(115200);
   // 对于 ESP32-C3，USB 串口需要一点时间在电脑上枚举
   unsigned long startWait = millis();
-  while (!Serial && millis() - startWait < 3000) { delay(10); } 
+  while (!Serial && millis() - startWait < SERIAL_ENUMERATION_TIMEOUT_MS) { delay(10); }
   delay(500);
 
   Serial.println();
@@ -289,12 +305,12 @@ void updateLights() {
 }
 
 void animateGreenBlink(unsigned long nowMs) {
-  bool on = (nowMs / 600) % 2 == 0;
+  bool on = (nowMs / GREEN_BLINK_INTERVAL_MS) % 2 == 0;
   setLights(LED_OFF, LED_OFF, on ? LED_ON : LED_OFF);
 }
 
 void animateThinking(unsigned long nowMs) {
-  if (nowMs - lastFrameMs < 130) {
+  if (nowMs - lastFrameMs < THINKING_FRAME_INTERVAL_MS) {
     return;
   }
 
@@ -325,12 +341,12 @@ int breathValue(unsigned long nowMs, unsigned long periodMs) {
 }
 
 void animateWorking(unsigned long nowMs) {
-  int value = breathValue(nowMs, 2400);
+  int value = breathValue(nowMs, WORKING_BREATHE_PERIOD_MS);
   setLights(value, value, value);
 }
 
 void animateBusy(unsigned long nowMs) {
-  bool on = (nowMs / 600) % 2 == 0;
+  bool on = (nowMs / BUSY_BLINK_INTERVAL_MS) % 2 == 0;
   setLights(LED_OFF, on ? LED_ON : LED_OFF, LED_OFF);
 }
 
@@ -339,28 +355,25 @@ void animateSuccess() {
 }
 
 void animateError(unsigned long nowMs) {
-  bool on = (nowMs / 140) % 2 == 0;
+  bool on = (nowMs / ERROR_BLINK_INTERVAL_MS) % 2 == 0;
   setLights(on ? LED_ON : LED_OFF, LED_OFF, LED_OFF);
 }
 
 void animateAlarm(unsigned long nowMs) {
-  bool redOn = (nowMs / 180) % 2 == 0;
+  bool redOn = (nowMs / ALARM_BLINK_INTERVAL_MS) % 2 == 0;
   setLights(redOn ? LED_ON : LED_OFF, redOn ? LED_OFF : LED_ON, LED_OFF);
 }
 
 void handleEffectCommand(String cmd) {
   // Format: EFFECT:<TYPE>:<COLORS>:<INTERVAL_MS>, e.g. EFFECT:CYCLE:RYG:200
-  int firstColon = cmd.indexOf(':');
-  int secondColon = cmd.indexOf(':', firstColon + 1);
-  int thirdColon = cmd.indexOf(':', secondColon + 1);
-
-  if (firstColon < 0 || secondColon < 0 || thirdColon < 0) {
+  String fields[3];
+  if (!splitCommandFields(cmd, ':', fields, 3)) {
     return;
   }
 
-  String typeText = cmd.substring(firstColon + 1, secondColon);
-  String colorsText = cmd.substring(secondColon + 1, thirdColon);
-  String intervalText = cmd.substring(thirdColon + 1);
+  String typeText = fields[0];
+  String colorsText = fields[1];
+  String intervalText = fields[2];
 
   CustomEffectType parsedType;
   if (typeText == "SOLID") {
@@ -493,45 +506,7 @@ void handleCommand(String cmd) {
     return;
   }
 
-  if (isCommand(cmd, "GREEN_BLINK", "GREENBLINK", "BLINK", "GBLINK")) {
-    lightOn = true;
-    startMode(MODE_GREEN_BLINK);
-    return;
-  }
-
-  if (isCommand(cmd, "THINKING", "THINK", "ANALYSIS")) {
-    startMode(MODE_THINKING);
-    return;
-  }
-
-  if (isCommand(cmd, "WORKING", "AI", "GENERATING", "GENERATE")) {
-    startMode(MODE_WORKING);
-    return;
-  }
-
-  if (isCommand(cmd, "BUSY", "COMMAND", "EXECUTING")) {
-    startMode(MODE_BUSY);
-    return;
-  }
-
-  if (isCommand(cmd, "SUCCESS", "OK", "DONE")) {
-    startMode(MODE_SUCCESS);
-    return;
-  }
-
-  if (isCommand(cmd, "ERROR", "FAILED", "FAIL")) {
-    startMode(MODE_ERROR);
-    return;
-  }
-
-  if (isCommand(cmd, "ALARM", "BLOCKED", "CRITICAL")) {
-    startMode(MODE_ALARM);
-    return;
-  }
-
-  if (isCommand(cmd, "OFF", "CLOSE", "IDLE")) {
-    lightOn = false;
-    turnOffLights();
+  if (handleModeCommand(cmd)) {
     return;
   }
 
@@ -540,6 +515,61 @@ void handleCommand(String cmd) {
     return;
   }
 
+  handleManualLedCommand(cmd);
+}
+
+// Named-mode commands (GREEN_BLINK/THINKING/.../OFF and their aliases).
+// Returns true if `cmd` matched one, false if the caller should fall
+// through to single-letter manual LED control.
+bool handleModeCommand(String cmd) {
+  if (isCommand(cmd, "GREEN_BLINK", "GREENBLINK", "BLINK", "GBLINK")) {
+    lightOn = true;
+    startMode(MODE_GREEN_BLINK);
+    return true;
+  }
+
+  if (isCommand(cmd, "THINKING", "THINK", "ANALYSIS")) {
+    startMode(MODE_THINKING);
+    return true;
+  }
+
+  if (isCommand(cmd, "WORKING", "AI", "GENERATING", "GENERATE")) {
+    startMode(MODE_WORKING);
+    return true;
+  }
+
+  if (isCommand(cmd, "BUSY", "COMMAND", "EXECUTING")) {
+    startMode(MODE_BUSY);
+    return true;
+  }
+
+  if (isCommand(cmd, "SUCCESS", "OK", "DONE")) {
+    startMode(MODE_SUCCESS);
+    return true;
+  }
+
+  if (isCommand(cmd, "ERROR", "FAILED", "FAIL")) {
+    startMode(MODE_ERROR);
+    return true;
+  }
+
+  if (isCommand(cmd, "ALARM", "BLOCKED", "CRITICAL")) {
+    startMode(MODE_ALARM);
+    return true;
+  }
+
+  if (isCommand(cmd, "OFF", "CLOSE", "IDLE")) {
+    lightOn = false;
+    turnOffLights();
+    return true;
+  }
+
+  return false;
+}
+
+// Single-letter manual control, e.g. "R", "R0", "R128" (color + optional
+// PWM value; bare "0"/"1" map to fully off/on).
+void handleManualLedCommand(String cmd) {
   char led = cmd.charAt(0);
   int value = LED_ON; // 默认单字母输入为亮起
 
@@ -644,7 +674,7 @@ void handleOtaControl(String cmd) {
     lightOn = true;
     startMode(MODE_SUCCESS);
     restartAfterOta = true;
-    restartAtMs = millis() + 3000;
+    restartAtMs = millis() + OTA_RESTART_DELAY_MS;
     return;
   }
 
@@ -721,6 +751,32 @@ bool isCommand(String cmd, String a, String b, String c, String d) {
   return cmd == a || cmd == b || cmd == c || cmd == d;
 }
 
+// Splits `cmd` on `sep`, extracting `fieldCount` fields after the leading
+// command-name segment (which is discarded) into `fields`. The final field
+// greedily captures everything after its separator. Returns false if fewer
+// than `fieldCount` separators are found — callers treat that as a
+// malformed command, same as the indexOf/substring chains this replaces.
+bool splitCommandFields(const String &cmd, char sep, String fields[], int fieldCount) {
+  int pos = cmd.indexOf(sep);
+
+  for (int i = 0; i < fieldCount; i++) {
+    if (pos < 0) {
+      return false;
+    }
+
+    bool isLastField = (i == fieldCount - 1);
+    int nextPos = isLastField ? -1 : cmd.indexOf(sep, pos + 1);
+    if (!isLastField && nextPos < 0) {
+      return false;
+    }
+
+    fields[i] = (nextPos < 0) ? cmd.substring(pos + 1) : cmd.substring(pos + 1, nextPos);
+    pos = nextPos;
+  }
+
+  return true;
+}
+
 bool isSafeGpioPin(int pin) {
   for (int i = 0; i < SAFE_GPIO_PIN_COUNT; i++) {
     if (SAFE_GPIO_PINS[i] == pin) {
@@ -744,15 +800,14 @@ bool isNumericString(const String &text) {
 
 void handleSetPinCommand(String cmd) {
   // Format: SETPIN:<R|Y|G>:<pin>, e.g. SETPIN:R:10
-  int firstColon = cmd.indexOf(':');
-  int secondColon = cmd.indexOf(':', firstColon + 1);
-  if (firstColon < 0 || secondColon < 0) {
+  String fields[2];
+  if (!splitCommandFields(cmd, ':', fields, 2)) {
     setOtaStatus("SETPIN failed: malformed command");
     return;
   }
 
-  String colorText = cmd.substring(firstColon + 1, secondColon);
-  String pinText = cmd.substring(secondColon + 1);
+  String colorText = fields[0];
+  String pinText = fields[1];
   if (!isNumericString(pinText)) {
     setOtaStatus("SETPIN failed: malformed command");
     return;
@@ -793,15 +848,14 @@ void sendConfigStatus() {
 
 void handlePinTestCommand(String cmd) {
   // Format: PINTEST:<pin>:<0|1>
-  int firstColon = cmd.indexOf(':');
-  int secondColon = cmd.indexOf(':', firstColon + 1);
-  if (firstColon < 0 || secondColon < 0) {
+  String fields[2];
+  if (!splitCommandFields(cmd, ':', fields, 2)) {
     setOtaStatus("PINTEST failed: malformed command");
     return;
   }
 
-  String pinText = cmd.substring(firstColon + 1, secondColon);
-  String valueText = cmd.substring(secondColon + 1);
+  String pinText = fields[0];
+  String valueText = fields[1];
   if (!isNumericString(pinText) || !isNumericString(valueText)) {
     // Guards against e.g. "PINTEST:R:1" or a blank field silently
     // parsing to pin/value 0 via String::toInt() — see Task 2's fix for
@@ -836,7 +890,7 @@ void handlePinTestCommand(String cmd) {
   pinMode(pin, OUTPUT);
   analogWrite(pin, value == 1 ? LED_ON : LED_OFF);
   pinTestActivePin = pin;
-  pinTestDeadlineMs = millis() + 5000;
+  pinTestDeadlineMs = millis() + PIN_TEST_TIMEOUT_MS;
 }
 
 void endPinTestIfExpired(unsigned long nowMs) {
@@ -855,13 +909,13 @@ void endPinTestIfExpired(unsigned long nowMs) {
 void handleSetNameCommand(String cmd) {
   // Format: SETNAME:<name> — `cmd` here is the ORIGINAL (non-uppercased)
   // command text so the chosen name keeps its case.
-  int firstColon = cmd.indexOf(':');
-  if (firstColon < 0) {
+  String fields[1];
+  if (!splitCommandFields(cmd, ':', fields, 1)) {
     setOtaStatus("SETNAME failed: malformed command");
     return;
   }
 
-  String newName = cmd.substring(firstColon + 1);
+  String newName = fields[0];
   newName.trim();
   if (newName.length() == 0) {
     setOtaStatus("SETNAME failed: empty name");
@@ -871,17 +925,17 @@ void handleSetNameCommand(String cmd) {
   prefs.putString("bleName", newName);
   setOtaStatus("SETNAME ok, restarting");
   restartAfterRename = true;
-  restartAfterRenameAtMs = millis() + 3000;
+  restartAfterRenameAtMs = millis() + RENAME_RESTART_DELAY_MS;
 }
 
 void handleBrightnessCommand(String cmd) {
   // Format: BRIGHTNESS:<0-100>
-  int colonIndex = cmd.indexOf(':');
-  if (colonIndex < 0) {
+  String fields[1];
+  if (!splitCommandFields(cmd, ':', fields, 1)) {
     setOtaStatus("BRIGHTNESS failed: malformed command");
     return;
   }
 
-  int percent = cmd.substring(colonIndex + 1).toInt();
+  int percent = fields[0].toInt();
   brightnessPercent = constrain(percent, 0, 100);
 }
