@@ -267,6 +267,9 @@
 "settings.signalLight.firmwareUpdateAvailablePrefix" = "發現新版本：";
 "settings.signalLight.downloadAndUpdate" = "下載並更新";
 "settings.signalLight.firmwareCheckFailedPrefix" = "檢查更新失敗：";
+"settings.signalLight.downloadingUpdate" = "正在下載韌體…";
+"settings.signalLight.firmwareUpdateAvailableTitle" = "發現新版本";
+"settings.signalLight.firmwareDownloadFailedTitle" = "韌體下載失敗";
 "settings.signalLight.firmwareChooseFile" = "選擇韌體檔案…";
 "settings.signalLight.firmwareChangeFile" = "更換";
 "settings.signalLight.firmwareFlash" = "燒錄韌體";

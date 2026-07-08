@@ -18,6 +18,9 @@ struct SignalLightSettingsPane: View {
     @State private var isDownloadingFirmwareUpdate = false
     @State private var firmwareDownloadErrorMessage: String?
     @State private var isShowingChangelog = false
+    @State private var isShowingUpdateAvailableAlert = false
+    @State private var pendingUpdateVersion: String?
+    @State private var pendingUpdateNotes: String?
 
     private var lang: LanguageManager { model.lang }
 
@@ -53,6 +56,40 @@ struct SignalLightSettingsPane: View {
         }
         .sheet(isPresented: $isShowingChangelog) {
             changelogSheet
+        }
+        .onChange(of: model.signalLight.firmwareUpdateChecker.state) { _, newState in
+            if case .updateAvailable(let version, let notes) = newState {
+                pendingUpdateVersion = version
+                pendingUpdateNotes = notes
+                isShowingUpdateAvailableAlert = true
+            }
+        }
+        .alert(
+            lang.t("settings.signalLight.firmwareUpdateAvailableTitle"),
+            isPresented: $isShowingUpdateAvailableAlert
+        ) {
+            Button(lang.t("settings.signalLight.downloadAndUpdate")) {
+                downloadAndFlashLatestFirmware()
+            }
+            Button(lang.t("settings.general.cancel"), role: .cancel) {}
+        } message: {
+            let prefix = lang.t("settings.signalLight.firmwareUpdateAvailablePrefix") + (pendingUpdateVersion ?? "")
+            if let pendingUpdateNotes, !pendingUpdateNotes.isEmpty {
+                Text(prefix + "\n" + pendingUpdateNotes)
+            } else {
+                Text(prefix)
+            }
+        }
+        .alert(
+            lang.t("settings.signalLight.firmwareDownloadFailedTitle"),
+            isPresented: Binding(
+                get: { firmwareDownloadErrorMessage != nil },
+                set: { isPresented in if !isPresented { firmwareDownloadErrorMessage = nil } }
+            )
+        ) {
+            Button(lang.t("settings.general.cancel"), role: .cancel) {}
+        } message: {
+            Text(firmwareDownloadErrorMessage ?? "")
         }
     }
 
@@ -274,8 +311,7 @@ struct SignalLightSettingsPane: View {
                     renameRow
                     Divider()
                     firmwareVersionRow
-                    firmwareUpdateCheckRow
-                    firmwareFilePickerRow
+                    firmwareRow
                     firmwareActionRow
                 } else {
                     Text(lang.t("settings.signalLight.firmwareNeedsConnection"))
@@ -354,83 +390,21 @@ struct SignalLightSettingsPane: View {
         }
     }
 
+    /// Combines "check for updates" and "pick a local file to flash" into one
+    /// row — they're two ways of getting to the same OTA flash flow below,
+    /// so they don't need a row each. A found update surfaces via an alert
+    /// (see `body`'s `.onChange`/`.alert`) rather than inline text here.
     @ViewBuilder
-    private var firmwareUpdateCheckRow: some View {
-        switch model.signalLight.firmwareUpdateChecker.state {
-        case .idle:
-            Button(lang.t("settings.signalLight.checkForUpdates")) {
-                checkForFirmwareUpdates()
-            }
-            .disabled(isTransferring)
-
-        case .checking:
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text(lang.t("settings.signalLight.checkingForUpdates"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-        case .upToDate:
-            HStack {
-                Text(lang.t("settings.signalLight.firmwareUpToDate"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button(lang.t("settings.signalLight.checkForUpdates")) {
-                    checkForFirmwareUpdates()
-                }
-                .disabled(isTransferring)
-            }
-
-        case .updateAvailable(let version, let notes):
-            VStack(alignment: .leading, spacing: 4) {
-                Text(lang.t("settings.signalLight.firmwareUpdateAvailablePrefix") + version)
-                    .font(.system(size: 12, weight: .semibold))
-                if let notes, !notes.isEmpty {
-                    Text(notes)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                HStack(spacing: 8) {
-                    if isDownloadingFirmwareUpdate {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Button(lang.t("settings.signalLight.downloadAndUpdate")) {
-                            downloadAndFlashLatestFirmware()
-                        }
-                        .disabled(isTransferring)
-                    }
-                    if let firmwareDownloadErrorMessage {
-                        Text(firmwareDownloadErrorMessage)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
-                }
-            }
-
-        case .failed(let reason):
-            HStack {
-                Text(lang.t("settings.signalLight.firmwareCheckFailedPrefix") + reason)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                Spacer()
-                Button(lang.t("settings.signalLight.checkForUpdates")) {
-                    checkForFirmwareUpdates()
-                }
-                .disabled(isTransferring)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var firmwareFilePickerRow: some View {
+    private var firmwareRow: some View {
         HStack {
+            checkForUpdatesControl
+
+            Spacer()
+
             if let selectedFirmwareURL {
                 Text(selectedFirmwareURL.lastPathComponent)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Spacer()
                 Button(lang.t("settings.signalLight.firmwareChangeFile")) {
                     presentFirmwarePicker()
                 }
@@ -455,6 +429,56 @@ struct SignalLightSettingsPane: View {
                     presentFirmwarePicker()
                 }
                 .disabled(isTransferring)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var checkForUpdatesControl: some View {
+        if isDownloadingFirmwareUpdate {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(lang.t("settings.signalLight.downloadingUpdate"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            switch model.signalLight.firmwareUpdateChecker.state {
+            case .idle, .updateAvailable:
+                Button(lang.t("settings.signalLight.checkForUpdates")) {
+                    checkForFirmwareUpdates()
+                }
+                .disabled(isTransferring)
+
+            case .checking:
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(lang.t("settings.signalLight.checkingForUpdates"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+            case .upToDate:
+                HStack(spacing: 4) {
+                    Button(lang.t("settings.signalLight.checkForUpdates")) {
+                        checkForFirmwareUpdates()
+                    }
+                    .disabled(isTransferring)
+                    Image(systemName: "checkmark.circle")
+                        .foregroundStyle(.green)
+                        .help(lang.t("settings.signalLight.firmwareUpToDate"))
+                }
+
+            case .failed(let reason):
+                HStack(spacing: 4) {
+                    Button(lang.t("settings.signalLight.checkForUpdates")) {
+                        checkForFirmwareUpdates()
+                    }
+                    .disabled(isTransferring)
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundStyle(.red)
+                        .help(lang.t("settings.signalLight.firmwareCheckFailedPrefix") + reason)
+                }
             }
         }
     }
