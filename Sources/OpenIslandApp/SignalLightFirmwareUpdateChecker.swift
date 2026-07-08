@@ -91,17 +91,23 @@ final class SignalLightFirmwareUpdateChecker {
     /// Downloads the latest binary to a fresh temporary file and returns its
     /// URL. Throws on any network failure; callers leave `state` untouched
     /// (still `.updateAvailable`) so the user can retry without re-checking.
+    ///
+    /// Uses `data(from:)` rather than a download task deliberately: on some
+    /// networks `URLSessionDownloadTask` (which hands off to the system's
+    /// separate `nsurlsessiond` daemon process) stalls and times out while an
+    /// in-process `dataTask` for the same URL succeeds immediately — likely a
+    /// firewall/VPN rule scoped to that daemon. The firmware binary is only a
+    /// few hundred KB, so buffering it in memory has no real downside.
     func downloadLatestBinary() async throws -> URL {
-        let (tempURL, response) = try await URLSession.shared.download(from: Self.binaryURL)
+        let (data, response) = try await URLSession.shared.data(from: Self.binaryURL)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            try? FileManager.default.removeItem(at: tempURL)
             throw SignalLightFirmwareUpdateCheckError.downloadFailed
         }
 
         let destination = FileManager.default.temporaryDirectory
             .appendingPathComponent("signal-light-firmware.bin")
         try? FileManager.default.removeItem(at: destination)
-        try FileManager.default.moveItem(at: tempURL, to: destination)
+        try data.write(to: destination)
         return destination
     }
 }
