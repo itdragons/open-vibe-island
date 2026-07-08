@@ -148,10 +148,7 @@ void setup() {
   led_green = prefs.getInt("pinGreen", DEFAULT_LED_GREEN);
   bleName = prefs.getString("bleName", "");
   if (bleName.length() == 0) {
-    uint64_t chipId = ESP.getEfuseMac();
-    char suffix[5];
-    snprintf(suffix, sizeof(suffix), "%04X", (uint16_t)(chipId & 0xFFFF));
-    bleName = BLE_NAME_PREFIX + String(suffix);
+    bleName = BLE_NAME_PREFIX;
     prefs.putString("bleName", bleName);
   }
   Serial.println("Pins -> R:" + String(led_red) + " Y:" + String(led_yellow) + " G:" + String(led_green));
