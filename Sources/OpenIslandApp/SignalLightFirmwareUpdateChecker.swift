@@ -39,6 +39,13 @@ final class SignalLightFirmwareUpdateChecker {
     private static let manifestURL = URL(string: "https://raw.githubusercontent.com/itdragons/open-vibe-island/wg/signal-light/firmware/version.json")!
     private static let binaryURL = URL(string: "https://raw.githubusercontent.com/itdragons/open-vibe-island/wg/signal-light/firmware/signal-light.bin")!
     private static let manifestTimeoutSeconds: TimeInterval = 5
+    private static let binaryTimeoutSeconds: TimeInterval = 15
+    /// Connection establishment to raw.githubusercontent.com intermittently
+    /// stalls to a full timeout on some networks (observed on both dataTask
+    /// and downloadTask — not specific to either), then succeeds immediately
+    /// on the very next attempt. A short per-attempt timeout plus a couple of
+    /// retries turns that into a non-issue instead of a multi-minute hang.
+    private static let maxAttempts = 3
 
     private(set) var state: SignalLightFirmwareUpdateCheckState = .idle
     private(set) var changelogState: SignalLightFirmwareChangelogState = .idle
@@ -79,36 +86,54 @@ final class SignalLightFirmwareUpdateChecker {
     }
 
     private func fetchManifest() async throws -> SignalLightFirmwareManifest {
-        var request = URLRequest(url: Self.manifestURL)
-        request.timeoutInterval = Self.manifestTimeoutSeconds
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw SignalLightFirmwareUpdateCheckError.requestFailed
-        }
+        let data = try await fetchWithRetry(url: Self.manifestURL, timeout: Self.manifestTimeoutSeconds, failure: .requestFailed)
         return try JSONDecoder().decode(SignalLightFirmwareManifest.self, from: data)
     }
 
     /// Downloads the latest binary to a fresh temporary file and returns its
     /// URL. Throws on any network failure; callers leave `state` untouched
     /// (still `.updateAvailable`) so the user can retry without re-checking.
-    ///
-    /// Uses `data(from:)` rather than a download task deliberately: on some
-    /// networks `URLSessionDownloadTask` (which hands off to the system's
-    /// separate `nsurlsessiond` daemon process) stalls and times out while an
-    /// in-process `dataTask` for the same URL succeeds immediately — likely a
-    /// firewall/VPN rule scoped to that daemon. The firmware binary is only a
-    /// few hundred KB, so buffering it in memory has no real downside.
     func downloadLatestBinary() async throws -> URL {
-        let (data, response) = try await URLSession.shared.data(from: Self.binaryURL)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw SignalLightFirmwareUpdateCheckError.downloadFailed
-        }
+        let data = try await fetchWithRetry(url: Self.binaryURL, timeout: Self.binaryTimeoutSeconds, failure: .downloadFailed)
 
         let destination = FileManager.default.temporaryDirectory
             .appendingPathComponent("signal-light-firmware.bin")
         try? FileManager.default.removeItem(at: destination)
         try data.write(to: destination)
         return destination
+    }
+
+    /// Fetches `url` with a bounded per-attempt timeout, retrying up to
+    /// `maxAttempts` times — see the note on `maxAttempts` for why. Non-200
+    /// responses fail immediately without retrying, since a retry won't fix
+    /// a real server-side problem.
+    private func fetchWithRetry(
+        url: URL,
+        timeout: TimeInterval,
+        failure: SignalLightFirmwareUpdateCheckError
+    ) async throws -> Data {
+        var lastError: Error = failure
+
+        for attempt in 1...Self.maxAttempts {
+            do {
+                var request = URLRequest(url: url)
+                request.timeoutInterval = timeout
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    throw failure
+                }
+                return data
+            } catch let error as SignalLightFirmwareUpdateCheckError {
+                throw error
+            } catch {
+                lastError = error
+                if attempt < Self.maxAttempts {
+                    continue
+                }
+            }
+        }
+
+        throw lastError
     }
 }
 
