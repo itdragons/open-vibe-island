@@ -7,49 +7,51 @@
 #include "config.h"
 
 
-// ESP32-C3 Super Mini supports BLE, but not BluetoothSerial.
-// Use the BLE device named C3_LED to control the lights and send firmware OTA.
+// ESP32-C3 Super Mini 支持 BLE，但不支持 BluetoothSerial（经典蓝牙）。
+// 通过名为 C3_LED 的 BLE 设备来控制灯光，并推送固件 OTA 升级。
 
 
-Preferences prefs;
+Preferences prefs; // NVS 键值存储句柄，用于持久化引脚分配与蓝牙名称
 
-// Runtime pin assignment and BLE name — loaded from NVS in setup(), falling
-// back to the config.h defaults on a fresh chip. Reassignable at runtime via
-// SETPIN/SETNAME without reflashing.
+// 运行时的引脚分配与蓝牙名称 —— 会在 setup() 中从 NVS 读取，
+// 新芯片首次上电时回退到 config.h 中的默认值；
+// 可在运行时通过 SETPIN/SETNAME 命令重新分配，无需重新烧录固件。
 int led_red = DEFAULT_LED_RED;
 int led_yellow = DEFAULT_LED_YELLOW;
 int led_green = DEFAULT_LED_GREEN;
-String bleName;
+String bleName; // 蓝牙广播名称，来自 NVS，或首次上电时用 config.h 的默认前缀
 
-bool lightOn = true;
+bool lightOn = true; // 灯光总开关：OFF 命令置为 false，其余命令通常会置为 true
 
-// This LED wiring is inverted:
-// 250 = default/text-command brightness, 255 = off.
+// 该 LED 接线为反相逻辑（PWM 数值越小越亮）：
+// LED_ON=0 表示全亮（低电平），LED_OFF=255 表示全灭（高电平）。
 const int LED_ON = 0; // 0 是全亮（低电平）
 const int LED_DIM = 128; // 半亮
 const int LED_OFF = 255; // 255 是全灭（高电平）
-const int PWM_MIN = 0;
-const int PWM_MAX = 255;
+const int PWM_MIN = 0; // PWM 取值下限
+const int PWM_MAX = 255; // PWM 取值上限
 
-// Timing constants (ms) — animation cadence and restart/timeout delays.
-const unsigned long GREEN_BLINK_INTERVAL_MS = 600;
-const unsigned long BUSY_BLINK_INTERVAL_MS = 600;
-const unsigned long THINKING_FRAME_INTERVAL_MS = 130;
-const unsigned long ERROR_BLINK_INTERVAL_MS = 140;
-const unsigned long ALARM_BLINK_INTERVAL_MS = 180;
-const unsigned long WORKING_BREATHE_PERIOD_MS = 2400;
-const unsigned long OTA_RESTART_DELAY_MS = 3000;
-const unsigned long RENAME_RESTART_DELAY_MS = 3000;
-const unsigned long PIN_TEST_TIMEOUT_MS = 5000;
-const unsigned long SERIAL_ENUMERATION_TIMEOUT_MS = 3000;
-const unsigned long BLE_RECONNECT_DELAY_MS = 100;
+// 时间相关常量（单位：毫秒）—— 动画节奏与重启/超时延迟。
+const unsigned long GREEN_BLINK_INTERVAL_MS = 600;    // GREEN_BLINK 模式绿灯闪烁间隔
+const unsigned long BUSY_BLINK_INTERVAL_MS = 600;     // BUSY 模式黄灯闪烁间隔
+const unsigned long THINKING_FRAME_INTERVAL_MS = 130; // THINKING 模式三色轮转的帧间隔
+const unsigned long ERROR_BLINK_INTERVAL_MS = 140;    // ERROR 模式红灯闪烁间隔
+const unsigned long ALARM_BLINK_INTERVAL_MS = 180;    // ALARM 模式红黄交替闪烁间隔
+const unsigned long WORKING_BREATHE_PERIOD_MS = 2400; // WORKING 模式呼吸灯周期
+const unsigned long OTA_RESTART_DELAY_MS = 3000;      // OTA 成功后延迟重启的等待时间
+const unsigned long RENAME_RESTART_DELAY_MS = 3000;   // 改名成功后延迟重启的等待时间
+const unsigned long PIN_TEST_TIMEOUT_MS = 5000;       // 接线测试单次点亮的超时时间
+const unsigned long SERIAL_ENUMERATION_TIMEOUT_MS = 3000; // 等待 USB 串口枚举完成的超时时间
+const unsigned long BLE_RECONNECT_DELAY_MS = 100;     // 客户端断开后、重新开启广播前的延迟
 
 int brightnessPercent = 100; // 0-100，通过 BRIGHTNESS 命令调节；App 重连后会重新同步
 
+// 手动模式（MODE_MANUAL）下三路 LED 当前使用的 PWM 值
 int redValue = LED_ON;
 int yellowValue = LED_ON;
 int greenValue = LED_ON;
 
+// 灯光渲染模式：MODE_MANUAL 为手动直接赋值，其余均为动画/特殊模式
 enum LedMode {
   MODE_MANUAL,
   MODE_GREEN_BLINK,
@@ -63,18 +65,19 @@ enum LedMode {
   MODE_PIN_TEST
 };
 
-LedMode currentMode = MODE_MANUAL;
-unsigned long lastFrameMs = 0;
-int frame = 0;
+LedMode currentMode = MODE_MANUAL; // 当前正在渲染的模式
+unsigned long lastFrameMs = 0;     // 上一帧动画的时间戳（如 THINKING 用它控制节奏）
+int frame = 0;                     // 当前动画帧序号（如 THINKING 用它轮转三色）
 
-// Wiring-calibration pin-test state (see handlePinTestCommand). Isolated
-// from the effect-rendering modes above so a PINTEST sequence can't be
-// silently overwritten by, or overwrite, a live EFFECT: push.
-int pinTestActivePin = -1;
-bool pinTestPriorLightOn = true;
-LedMode pinTestPriorMode = MODE_MANUAL;
-unsigned long pinTestDeadlineMs = 0;
+// 接线校准测试引脚状态（详见 handlePinTestCommand）。与上方的效果渲染
+// 模式互相隔离，避免 PINTEST 流程被正在进行的 EFFECT: 推送静默覆盖，
+// 也避免 PINTEST 反过来覆盖正在播放的效果。
+int pinTestActivePin = -1;              // 当前正在测试点亮的引脚，-1 表示未在测试
+bool pinTestPriorLightOn = true;        // 进入测试前的灯光开关状态，测试结束后恢复
+LedMode pinTestPriorMode = MODE_MANUAL; // 进入测试前的模式，测试结束后恢复
+unsigned long pinTestDeadlineMs = 0;    // 当前测试引脚的自动熄灭时间点
 
+// EFFECT: 命令支持的自定义效果类型：纯色 / 闪烁 / 流转 / 呼吸
 enum CustomEffectType {
   EFFECT_SOLID,
   EFFECT_BLINK,
@@ -82,22 +85,23 @@ enum CustomEffectType {
   EFFECT_BREATHE
 };
 
-CustomEffectType customEffectType = EFFECT_SOLID;
-int customEffectColors[3] = { -1, -1, -1 };
-int customEffectColorCount = 0;
-unsigned long customEffectIntervalMs = 0;
+CustomEffectType customEffectType = EFFECT_SOLID; // 当前生效的自定义效果类型
+int customEffectColors[3] = { -1, -1, -1 };        // 参与效果的引脚号（最多三路），未使用位置为 -1
+int customEffectColorCount = 0;                    // customEffectColors 中实际有效的颜色数量
+unsigned long customEffectIntervalMs = 0;          // 效果的闪烁/流转/呼吸周期（毫秒）
 
-BLECharacteristic *otaControlCharacteristic = nullptr;
+BLECharacteristic *otaControlCharacteristic = nullptr; // OTA 控制特征值指针，setOtaStatus 用它向 App 推送状态通知
 
-bool otaActive = false;
-bool restartAfterOta = false;
-size_t otaExpectedSize = UPDATE_SIZE_UNKNOWN;
-size_t otaWrittenBytes = 0;
-unsigned long restartAtMs = 0;
+bool otaActive = false;                       // 是否有一次 OTA 升级正在进行
+bool restartAfterOta = false;                 // OTA 成功结束后，是否需要延迟重启
+size_t otaExpectedSize = UPDATE_SIZE_UNKNOWN; // 本次 OTA 预期的固件总字节数，未知时为 UPDATE_SIZE_UNKNOWN
+size_t otaWrittenBytes = 0;                   // 本次 OTA 已写入的字节数
+unsigned long restartAtMs = 0;                // 达到该时间点后执行重启（配合 restartAfterOta）
 
-bool restartAfterRename = false;
-unsigned long restartAfterRenameAtMs = 0;
+bool restartAfterRename = false;            // 改名成功后，是否需要延迟重启
+unsigned long restartAfterRenameAtMs = 0;   // 达到该时间点后执行重启（配合 restartAfterRename）
 
+// 函数前向声明，方便在文件中以任意顺序定义/调用
 void handleCommand(String cmd);
 bool handleModeCommand(String cmd);
 void handleManualLedCommand(String cmd);
@@ -120,6 +124,7 @@ void handleSetNameCommand(String cmd);
 void handleBrightnessCommand(String cmd);
 int currentOnValue();
 
+// 客户端断开连接后重新开启广播，方便下一次连接
 class ServerCallback : public BLEServerCallbacks {
   void onDisconnect(BLEServer *server) {
     delay(BLE_RECONNECT_DELAY_MS);
@@ -127,6 +132,7 @@ class ServerCallback : public BLEServerCallbacks {
   }
 };
 
+// 命令特征值被写入时，把原始字节转成字符串，交给统一的指令处理入口
 class LedCallback : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *characteristic) {
     String cmd = String(characteristic->getValue().c_str());
@@ -134,6 +140,7 @@ class LedCallback : public BLECharacteristicCallbacks {
   }
 };
 
+// OTA 控制特征值被写入时，转交给 OTA 控制指令处理函数
 class OtaControlCallback : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *characteristic) {
     String cmd = String(characteristic->getValue().c_str());
@@ -141,6 +148,7 @@ class OtaControlCallback : public BLECharacteristicCallbacks {
   }
 };
 
+// OTA 数据特征值被写入时，把固件分片交给 OTA 数据处理函数
 class OtaDataCallback : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *characteristic) {
     handleOtaData(characteristic);
@@ -158,6 +166,7 @@ void setup() {
   Serial.println("============================");
   Serial.println("C3 LED starting...");
 
+  // 从 NVS 读取持久化的引脚分配与蓝牙名称；全新芯片没有记录时用 config.h 默认值
   prefs.begin("wglight", false);
   led_red = prefs.getInt("pinRed", DEFAULT_LED_RED);
   led_yellow = prefs.getInt("pinYellow", DEFAULT_LED_YELLOW);
@@ -170,27 +179,34 @@ void setup() {
   Serial.println("Pins -> R:" + String(led_red) + " Y:" + String(led_yellow) + " G:" + String(led_green));
   Serial.println("BLE name -> " + bleName);
 
+  // 将三路 LED 引脚初始化为输出模式
   pinMode(led_green, OUTPUT);
   pinMode(led_red, OUTPUT);
   pinMode(led_yellow, OUTPUT);
-  // No physical button configured
+  // 未接实体按键，无需初始化按键引脚
 
+  // 上电后先按默认手动值点亮一次，避免灯光短暂处于未定义状态
   showManualLights();
 
+  // 初始化 BLE 协议栈，并调大 MTU 以提升 OTA 数据传输效率
   BLEDevice::init(bleName.c_str());
   BLEDevice::setMTU(517);
 
+  // 创建 BLE 服务端，断开重连由 ServerCallback 负责重新广播
   BLEServer *server = BLEDevice::createServer();
   server->setCallbacks(new ServerCallback());
 
+  // 创建统一的信号灯服务，下面的特征值都挂在这个服务下
   BLEService *service = server->createService(SERVICE_UUID);
 
+  // 命令特征值：仅可写，用于接收灯光/模式控制指令
   BLECharacteristic *commandCharacteristic = service->createCharacteristic(
     COMMAND_CHARACTERISTIC_UUID,
     BLECharacteristic::PROPERTY_WRITE
   );
   commandCharacteristic->setCallbacks(new LedCallback());
 
+  // OTA 控制特征值：可写可读可通知，用于 OTA 握手与状态上报
   otaControlCharacteristic = service->createCharacteristic(
     OTA_CONTROL_CHARACTERISTIC_UUID,
     BLECharacteristic::PROPERTY_WRITE |
@@ -202,6 +218,7 @@ void setup() {
   otaControlCharacteristic->setCallbacks(new OtaControlCallback());
   otaControlCharacteristic->setValue("BLE OTA ready");
 
+  // OTA 数据特征值：只写，用于分片传输固件数据
   BLECharacteristic *otaDataCharacteristic = service->createCharacteristic(
     OTA_DATA_CHARACTERISTIC_UUID,
     BLECharacteristic::PROPERTY_WRITE |
@@ -209,14 +226,17 @@ void setup() {
   );
   otaDataCharacteristic->setCallbacks(new OtaDataCallback());
 
+  // 信息特征值：只读，暴露当前固件版本号
   BLECharacteristic *infoCharacteristic = service->createCharacteristic(
     INFO_CHARACTERISTIC_UUID,
     BLECharacteristic::PROPERTY_READ
   );
   infoCharacteristic->setValue(FIRMWARE_VERSION.c_str());
 
+  // 启动服务，使上面注册的特征值对外可见
   service->start();
 
+  // 启动 BLE 广播，等待 App 发现并连接
   BLEAdvertising *advertising = BLEDevice::getAdvertising();
   advertising->addServiceUUID(SERVICE_UUID);
   advertising->start();
@@ -225,15 +245,19 @@ void setup() {
   Serial.println("Commands: OTA_BEGIN:<bytes>, OTA_END, OTA_ABORT, OTA_STATUS");
 }
 
+// 主循环：处理延迟重启、串口调试指令、接线测试超时，并渲染当前灯光模式
 void loop() {
+  // OTA 升级成功后，延迟重启让状态提示先发送出去
   if (restartAfterOta && millis() >= restartAtMs) {
     ESP.restart();
   }
 
+  // 改名成功后，延迟重启使新的蓝牙名称生效
   if (restartAfterRename && millis() >= restartAfterRenameAtMs) {
     ESP.restart();
   }
 
+  // 同时支持通过 USB 串口直接输入调试指令
   if (Serial.available() > 0) {
     String serialCmd = Serial.readStringUntil('\n');
     serialCmd.trim();
@@ -243,7 +267,7 @@ void loop() {
     }
   }
 
-  // checkButton(); // removed
+  // checkButton(); // 硬件无实体按键，已移除
 
   endPinTestIfExpired(millis());
 
@@ -255,22 +279,26 @@ void loop() {
   updateLights();
 }
 
-// checkButton logic removed as hardware has no button
+// 硬件没有实体按键，checkButton 相关逻辑已移除
 
+// 底层输出：直接写三路 PWM（反相逻辑，数值越小越亮）
 void setLights(int red, int yellow, int green) {
   analogWrite(led_red, red);
   analogWrite(led_yellow, yellow);
   analogWrite(led_green, green);
 }
 
+// 按手动模式当前保存的三色数值点亮
 void showManualLights() {
   setLights(redValue, yellowValue, greenValue);
 }
 
+// 熄灭三路 LED
 void turnOffLights() {
   setLights(LED_OFF, LED_OFF, LED_OFF);
 }
 
+// 切换到新的渲染模式，并重置动画帧状态，保证新模式从第一帧开始
 void startMode(LedMode mode) {
   lightOn = true;
   currentMode = mode;
@@ -278,6 +306,7 @@ void startMode(LedMode mode) {
   frame = 0;
 }
 
+// 根据当前模式分发到对应的动画渲染函数
 void updateLights() {
   unsigned long nowMs = millis();
 
@@ -300,15 +329,17 @@ void updateLights() {
   } else if (currentMode == MODE_CUSTOM_EFFECT) {
     animateCustomEffect(nowMs);
   } else if (currentMode == MODE_PIN_TEST) {
-    // Pin driven directly by handlePinTestCommand(); nothing to render here.
+    // 引脚状态由 handlePinTestCommand() 直接驱动，这里无需渲染
   }
 }
 
+// GREEN_BLINK 模式：绿灯按固定间隔闪烁
 void animateGreenBlink(unsigned long nowMs) {
   bool on = (nowMs / GREEN_BLINK_INTERVAL_MS) % 2 == 0;
   setLights(LED_OFF, LED_OFF, on ? LED_ON : LED_OFF);
 }
 
+// THINKING 模式：三色按固定间隔轮转，制造"思考中"的观感
 void animateThinking(unsigned long nowMs) {
   if (nowMs - lastFrameMs < THINKING_FRAME_INTERVAL_MS) {
     return;
@@ -326,10 +357,12 @@ void animateThinking(unsigned long nowMs) {
   }
 }
 
+// 把 0-100 的亮度百分比换算成反相 PWM 下的"点亮"数值
 int currentOnValue() {
   return map(brightnessPercent, 0, 100, LED_OFF, LED_ON);
 }
 
+// 计算呼吸灯在一个周期内当前的 PWM 值：前半周期从灭渐亮，后半周期从亮渐灭
 int breathValue(unsigned long nowMs, unsigned long periodMs) {
   unsigned long phase = nowMs % periodMs;
 
@@ -340,32 +373,38 @@ int breathValue(unsigned long nowMs, unsigned long periodMs) {
   return map(phase, periodMs / 2, periodMs, LED_ON, LED_OFF);
 }
 
+// WORKING 模式：用呼吸灯效果表现"正在生成"的状态
 void animateWorking(unsigned long nowMs) {
   int value = breathValue(nowMs, WORKING_BREATHE_PERIOD_MS);
   setLights(value, value, value);
 }
 
+// BUSY 模式：黄灯按固定间隔闪烁
 void animateBusy(unsigned long nowMs) {
   bool on = (nowMs / BUSY_BLINK_INTERVAL_MS) % 2 == 0;
   setLights(LED_OFF, on ? LED_ON : LED_OFF, LED_OFF);
 }
 
+// SUCCESS 模式：常亮绿灯
 void animateSuccess() {
   setLights(LED_OFF, LED_OFF, LED_ON);
 }
 
+// ERROR 模式：红灯快速闪烁
 void animateError(unsigned long nowMs) {
   bool on = (nowMs / ERROR_BLINK_INTERVAL_MS) % 2 == 0;
   setLights(on ? LED_ON : LED_OFF, LED_OFF, LED_OFF);
 }
 
+// ALARM 模式：红黄交替闪烁，用于强提醒
 void animateAlarm(unsigned long nowMs) {
   bool redOn = (nowMs / ALARM_BLINK_INTERVAL_MS) % 2 == 0;
   setLights(redOn ? LED_ON : LED_OFF, redOn ? LED_OFF : LED_ON, LED_OFF);
 }
 
+// 解析并启动一个自定义效果（纯色/闪烁/流转/呼吸）
 void handleEffectCommand(String cmd) {
-  // Format: EFFECT:<TYPE>:<COLORS>:<INTERVAL_MS>, e.g. EFFECT:CYCLE:RYG:200
+  // 格式：EFFECT:<类型>:<颜色>:<间隔毫秒>，例如 EFFECT:CYCLE:RYG:200
   String fields[3];
   if (!splitCommandFields(cmd, ':', fields, 3)) {
     return;
@@ -420,6 +459,7 @@ void handleEffectCommand(String cmd) {
   startMode(MODE_CUSTOM_EFFECT);
 }
 
+// 把 onValue 写入 activeIndex 指定的颜色；activeIndex 为 -1 时对所有参与颜色生效
 void applyCustomEffectValue(int &red, int &yellow, int &green, int onValue, int activeIndex) {
   for (int i = 0; i < customEffectColorCount; i++) {
     if (activeIndex >= 0 && i != activeIndex) {
@@ -436,6 +476,7 @@ void applyCustomEffectValue(int &red, int &yellow, int &green, int onValue, int 
   }
 }
 
+// 按当前自定义效果类型（纯色/闪烁/流转/呼吸）渲染当前帧
 void animateCustomEffect(unsigned long nowMs) {
   if (customEffectColorCount == 0) {
     return;
@@ -466,6 +507,7 @@ void animateCustomEffect(unsigned long nowMs) {
   setLights(red, yellow, green);
 }
 
+// 蓝牙/串口指令的统一入口：归一化大小写后按前缀依次匹配并分发
 void handleCommand(String cmd) {
   String original = cmd;
   original.trim();
@@ -518,9 +560,8 @@ void handleCommand(String cmd) {
   handleManualLedCommand(cmd);
 }
 
-// Named-mode commands (GREEN_BLINK/THINKING/.../OFF and their aliases).
-// Returns true if `cmd` matched one, false if the caller should fall
-// through to single-letter manual LED control.
+// 命名模式命令（GREEN_BLINK/THINKING/.../OFF 及其别名）。
+// 命中则返回 true；返回 false 时调用方应继续尝试单字母手动灯光控制。
 bool handleModeCommand(String cmd) {
   if (isCommand(cmd, "GREEN_BLINK", "GREENBLINK", "BLINK", "GBLINK")) {
     lightOn = true;
@@ -567,8 +608,8 @@ bool handleModeCommand(String cmd) {
   return false;
 }
 
-// Single-letter manual control, e.g. "R", "R0", "R128" (color + optional
-// PWM value; bare "0"/"1" map to fully off/on).
+// 单字母手动控制，例如 "R"、"R0"、"R128"（颜色 + 可选 PWM 值；
+// 单独的 "0"/"1" 分别映射为全灭/全亮）。
 void handleManualLedCommand(String cmd) {
   char led = cmd.charAt(0);
   int value = LED_ON; // 默认单字母输入为亮起
@@ -610,6 +651,7 @@ void handleManualLedCommand(String cmd) {
   showManualLights();
 }
 
+// 处理 OTA_BEGIN/OTA_END/OTA_ABORT/OTA_STATUS 等 OTA 控制指令
 void handleOtaControl(String cmd) {
   cmd.trim();
 
@@ -617,6 +659,7 @@ void handleOtaControl(String cmd) {
   upper.toUpperCase();
 
   if (upper.startsWith("OTA_BEGIN") || upper.startsWith("OTA_START")) {
+    // 开始一次新的 OTA：若有残留的旧会话先中止，再按可选的字节数启动写入
     if (otaActive) {
       Update.abort();
       otaActive = false;
@@ -654,6 +697,7 @@ void handleOtaControl(String cmd) {
   }
 
   if (upper == "OTA_END" || upper == "OTA_FINISH") {
+    // 结束 OTA：校验写入字节数是否吻合，成功则延迟重启以加载新固件
     if (!otaActive) {
       setOtaStatus("OTA_END ignored: not active");
       return;
@@ -679,6 +723,7 @@ void handleOtaControl(String cmd) {
   }
 
   if (upper == "OTA_ABORT" || upper == "OTA_CANCEL") {
+    // 中止当前 OTA 会话
     if (otaActive) {
       Update.abort();
       otaActive = false;
@@ -691,6 +736,7 @@ void handleOtaControl(String cmd) {
   }
 
   if (upper == "OTA_STATUS") {
+    // 上报当前 OTA 会话的进度
     String status = "OTA_STATUS ";
     status += otaActive ? "active " : "idle ";
     status += String(otaWrittenBytes);
@@ -705,6 +751,7 @@ void handleOtaControl(String cmd) {
   setOtaStatus("Unknown OTA command");
 }
 
+// 接收 OTA 数据特征值分片写入的固件数据并写入 Update；超量或写入失败则中止 OTA
 void handleOtaData(BLECharacteristic *characteristic) {
   if (!otaActive) {
     return;
@@ -738,6 +785,7 @@ void handleOtaData(BLECharacteristic *characteristic) {
   }
 }
 
+// 把状态消息打印到串口，并通过 OTA 控制特征值通知已订阅的 App
 void setOtaStatus(const String &message) {
   Serial.println(message);
 
@@ -747,15 +795,15 @@ void setOtaStatus(const String &message) {
   }
 }
 
+// 判断 cmd 是否命中给定的若干候选别名之一
 bool isCommand(String cmd, String a, String b, String c, String d) {
   return cmd == a || cmd == b || cmd == c || cmd == d;
 }
 
-// Splits `cmd` on `sep`, extracting `fieldCount` fields after the leading
-// command-name segment (which is discarded) into `fields`. The final field
-// greedily captures everything after its separator. Returns false if fewer
-// than `fieldCount` separators are found — callers treat that as a
-// malformed command, same as the indexOf/substring chains this replaces.
+// 按 `sep` 分割 `cmd`，跳过开头的命令名段，提取其后的 `fieldCount`
+// 个字段写入 `fields`。最后一个字段会贪婪匹配其分隔符之后的全部内容。
+// 若找到的分隔符数量不足 `fieldCount` 个则返回 false —— 调用方将其
+// 视为命令格式错误，与被替换前逐个 indexOf/substring 的写法语义一致。
 bool splitCommandFields(const String &cmd, char sep, String fields[], int fieldCount) {
   int pos = cmd.indexOf(sep);
 
@@ -777,6 +825,7 @@ bool splitCommandFields(const String &cmd, char sep, String fields[], int fieldC
   return true;
 }
 
+// 校验引脚是否在允许分配/测试的安全 GPIO 白名单内
 bool isSafeGpioPin(int pin) {
   for (int i = 0; i < SAFE_GPIO_PIN_COUNT; i++) {
     if (SAFE_GPIO_PINS[i] == pin) {
@@ -786,6 +835,7 @@ bool isSafeGpioPin(int pin) {
   return false;
 }
 
+// 校验字符串是否为纯数字，用于拒绝非法的引脚号/数值参数
 bool isNumericString(const String &text) {
   if (text.length() == 0) {
     return false;
@@ -798,8 +848,9 @@ bool isNumericString(const String &text) {
   return true;
 }
 
+// 重新分配某一路 LED 的物理引脚，并持久化到 NVS，无需重新烧录固件即可修正接线错误
 void handleSetPinCommand(String cmd) {
-  // Format: SETPIN:<R|Y|G>:<pin>, e.g. SETPIN:R:10
+  // 格式：SETPIN:<R|Y|G>:<引脚号>，例如 SETPIN:R:10
   String fields[2];
   if (!splitCommandFields(cmd, ':', fields, 2)) {
     setOtaStatus("SETPIN failed: malformed command");
@@ -838,6 +889,7 @@ void handleSetPinCommand(String cmd) {
   setOtaStatus("SETPIN ok: " + colorText + "=" + String(pin));
 }
 
+// 上报当前引脚分配与蓝牙名称，供 App 展示或校验接线配置
 void sendConfigStatus() {
   String status = "CONFIG:R=" + String(led_red) +
                    ",Y=" + String(led_yellow) +
@@ -846,8 +898,9 @@ void sendConfigStatus() {
   setOtaStatus(status);
 }
 
+// 接线校准向导：短暂点亮候选引脚，帮助确认物理接线是否正确
 void handlePinTestCommand(String cmd) {
-  // Format: PINTEST:<pin>:<0|1>
+  // 格式：PINTEST:<引脚号>:<0|1>
   String fields[2];
   if (!splitCommandFields(cmd, ':', fields, 2)) {
     setOtaStatus("PINTEST failed: malformed command");
@@ -857,10 +910,9 @@ void handlePinTestCommand(String cmd) {
   String pinText = fields[0];
   String valueText = fields[1];
   if (!isNumericString(pinText) || !isNumericString(valueText)) {
-    // Guards against e.g. "PINTEST:R:1" or a blank field silently
-    // parsing to pin/value 0 via String::toInt() — see Task 2's fix for
-    // the same class of bug in SETPIN, which is where isNumericString
-    // is defined.
+    // 防止诸如 "PINTEST:R:1" 或空字段被 String::toInt() 静默解析成
+    // 引脚/值为 0 的情况 —— 与 SETPIN 里同类问题的修复思路一致，
+    // isNumericString 就定义在 SETPIN 的修复里。
     setOtaStatus("PINTEST failed: malformed command");
     return;
   }
@@ -874,16 +926,15 @@ void handlePinTestCommand(String cmd) {
   }
 
   if (currentMode != MODE_PIN_TEST) {
-    // Entering test mode for the first time this sequence: remember what to
-    // restore, and force the light on even if it was switched off, so the
-    // wizard works regardless of the light-switch state.
+    // 本次测试序列首次进入测试模式：记录需要恢复的状态，并强制点亮
+    // 灯光（即使之前被开关关闭），保证向导不受灯光开关状态影响。
     pinTestPriorLightOn = lightOn;
     pinTestPriorMode = currentMode;
     lightOn = true;
     currentMode = MODE_PIN_TEST;
   } else if (pinTestActivePin != -1 && pinTestActivePin != pin) {
-    // Switching to a different candidate pin mid-wizard: turn the previous
-    // one off so it doesn't stay lit if the app forgets to.
+    // 向导过程中切换到另一个候选引脚：先关掉上一个引脚，防止 App
+    // 忘记关闭导致它常亮。
     analogWrite(pinTestActivePin, LED_OFF);
   }
 
@@ -893,6 +944,7 @@ void handlePinTestCommand(String cmd) {
   pinTestDeadlineMs = millis() + PIN_TEST_TIMEOUT_MS;
 }
 
+// PINTEST 序列超时后自动熄灭测试引脚，并恢复进入测试前的模式与灯光开关状态
 void endPinTestIfExpired(unsigned long nowMs) {
   if (currentMode != MODE_PIN_TEST || nowMs < pinTestDeadlineMs) {
     return;
@@ -906,9 +958,10 @@ void endPinTestIfExpired(unsigned long nowMs) {
   currentMode = pinTestPriorMode;
 }
 
+// 修改蓝牙广播名称并持久化到 NVS，随后延迟重启使新名称生效
 void handleSetNameCommand(String cmd) {
-  // Format: SETNAME:<name> — `cmd` here is the ORIGINAL (non-uppercased)
-  // command text so the chosen name keeps its case.
+  // 格式：SETNAME:<名称> —— 这里的 `cmd` 是未转大写的原始命令文本，
+  // 以保留用户设置名称的大小写。
   String fields[1];
   if (!splitCommandFields(cmd, ':', fields, 1)) {
     setOtaStatus("SETNAME failed: malformed command");
@@ -928,8 +981,9 @@ void handleSetNameCommand(String cmd) {
   restartAfterRenameAtMs = millis() + RENAME_RESTART_DELAY_MS;
 }
 
+// 更新全局亮度百分比，供呼吸灯/自定义效果按比例计算 PWM 值
 void handleBrightnessCommand(String cmd) {
-  // Format: BRIGHTNESS:<0-100>
+  // 格式：BRIGHTNESS:<0-100>
   String fields[1];
   if (!splitCommandFields(cmd, ':', fields, 1)) {
     setOtaStatus("BRIGHTNESS failed: malformed command");
