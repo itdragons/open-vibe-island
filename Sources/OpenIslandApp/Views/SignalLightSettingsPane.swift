@@ -306,17 +306,38 @@ struct SignalLightSettingsPane: View {
     @ViewBuilder
     private var deviceManagementSection: some View {
         Section {
-            DisclosureGroup(lang.t("settings.signalLight.deviceManagement"), isExpanded: $isDeviceManagementExpanded) {
-                if case .connected = model.signalLight.status {
-                    renameRow
-                    Divider()
-                    firmwareVersionRow
-                    firmwareRow
-                    firmwareActionRow
-                } else {
-                    Text(lang.t("settings.signalLight.firmwareNeedsConnection"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    isDeviceManagementExpanded.toggle()
+                } label: {
+                    HStack {
+                        Text(lang.t("settings.signalLight.deviceManagement"))
+                        Spacer()
+                        Image(systemName: isDeviceManagementExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if isDeviceManagementExpanded {
+                    Group {
+                        if case .connected = model.signalLight.status {
+                            VStack(alignment: .leading, spacing: 10) {
+                                renameRow
+                                Divider()
+                                firmwareVersionRow
+                                firmwareRow
+                                firmwareActionRow
+                            }
+                        } else {
+                            Text(lang.t("settings.signalLight.firmwareNeedsConnection"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.top, 10)
                 }
             }
         }
@@ -895,6 +916,7 @@ private struct SignalLightModeRow: View {
                     Capsule()
                         .strokeBorder(isSelected ? Color.clear : Color.secondary.opacity(0.35), lineWidth: 1.5)
                 )
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .help(label)
