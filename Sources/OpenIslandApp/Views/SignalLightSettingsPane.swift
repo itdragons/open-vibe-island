@@ -283,25 +283,43 @@ struct SignalLightSettingsPane: View {
         }
     }
 
+    private var isSignalLightConnected: Bool {
+        if case .connected = model.signalLight.status { true } else { false }
+    }
+
     @ViewBuilder
     private var livePreviewRow: some View {
         let bucket = testPreview?.bucket ?? SignalLightBucketResolver.resolve(model.state)
+        let isNotConnected = testPreview == nil && !isSignalLightConnected
         let isOff = testPreview == nil && !model.signalLightEnabled
         let effect = testPreview?.effect
-            ?? (isOff ? SignalLightEffect(type: .solid, colors: [], intervalMs: 0)
-                      : (model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket)))
+            ?? (isNotConnected || isOff ? SignalLightEffect(type: .solid, colors: [], intervalMs: 0)
+                                         : (model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket)))
         HStack(spacing: 12) {
             SignalLightPreviewPill(effect: effect)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(lang.t("settings.signalLight.livePreview"))
                     .font(.system(size: 12, weight: .semibold))
-                Text(isOff ? lang.t("settings.signalLight.lightOff") : "\(bucketTitle(bucket)) · \(signalLightEffectSummary(effect, lang: lang))")
+                Text(previewCaption(bucket: bucket, effect: effect, isNotConnected: isNotConnected, isOff: isOff))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 4)
+    }
+
+    /// Not-connected takes priority over "light off" — even with the switch
+    /// on, nothing reaches the physical device while it's disconnected, so
+    /// that's the more fundamental reason the preview is blank.
+    private func previewCaption(bucket: SignalLightBucket, effect: SignalLightEffect, isNotConnected: Bool, isOff: Bool) -> String {
+        if isNotConnected {
+            lang.t("settings.signalLight.notConnected")
+        } else if isOff {
+            lang.t("settings.signalLight.lightOff")
+        } else {
+            "\(bucketTitle(bucket)) · \(signalLightEffectSummary(effect, lang: lang))"
+        }
     }
 
     // MARK: Device Management
