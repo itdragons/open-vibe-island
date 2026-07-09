@@ -286,14 +286,17 @@ struct SignalLightSettingsPane: View {
     @ViewBuilder
     private var livePreviewRow: some View {
         let bucket = testPreview?.bucket ?? SignalLightBucketResolver.resolve(model.state)
-        let effect = testPreview?.effect ?? (model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket))
+        let isOff = testPreview == nil && !model.signalLightEnabled
+        let effect = testPreview?.effect
+            ?? (isOff ? SignalLightEffect(type: .solid, colors: [], intervalMs: 0)
+                      : (model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket)))
         HStack(spacing: 12) {
             SignalLightPreviewPill(effect: effect)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(lang.t("settings.signalLight.livePreview"))
                     .font(.system(size: 12, weight: .semibold))
-                Text("\(bucketTitle(bucket)) · \(signalLightEffectSummary(effect, lang: lang))")
+                Text(isOff ? lang.t("settings.signalLight.lightOff") : "\(bucketTitle(bucket)) · \(signalLightEffectSummary(effect, lang: lang))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

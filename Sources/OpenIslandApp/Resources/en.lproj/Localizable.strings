@@ -295,4 +295,5 @@
 "settings.signalLight.calibrateDone" = "Done";
 "settings.signalLight.lightSection" = "Light";
 "settings.signalLight.livePreview" = "Live Preview";
+"settings.signalLight.lightOff" = "Light off";
 "settings.signalLight.deviceManagement" = "Device Management";

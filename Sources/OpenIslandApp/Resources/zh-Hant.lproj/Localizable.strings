@@ -294,4 +294,5 @@
 "settings.signalLight.calibrateDone" = "完成";
 "settings.signalLight.lightSection" = "燈光";
 "settings.signalLight.livePreview" = "即時預覽";
+"settings.signalLight.lightOff" = "燈已關閉";
 "settings.signalLight.deviceManagement" = "裝置管理";

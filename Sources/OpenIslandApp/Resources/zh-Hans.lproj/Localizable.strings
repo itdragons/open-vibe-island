@@ -295,4 +295,5 @@
 "settings.signalLight.calibrateDone" = "完成";
 "settings.signalLight.lightSection" = "灯光";
 "settings.signalLight.livePreview" = "实时预览";
+"settings.signalLight.lightOff" = "灯已关闭";
 "settings.signalLight.deviceManagement" = "设备管理";
