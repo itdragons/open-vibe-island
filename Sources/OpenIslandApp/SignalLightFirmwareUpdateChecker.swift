@@ -132,6 +132,11 @@ final class SignalLightFirmwareUpdateChecker {
             do {
                 var request = URLRequest(url: url)
                 request.timeoutInterval = timeout
+                // jsDelivr sends `Cache-Control: max-age=604800` (7 days); without
+                // this, URLSession's shared URLCache would keep serving a stale
+                // manifest/binary for up to a week after a new firmware version
+                // is published, even though the CDN itself already has it.
+                request.cachePolicy = .reloadIgnoringLocalCacheData
                 let (data, response) = try await URLSession.shared.data(for: request)
                 guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
                     throw failure
