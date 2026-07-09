@@ -11,9 +11,10 @@ for arg in "$@"; do
 done
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+app_name="WG Open Island Dev"
 brand_script="$repo_root/scripts/generate_brand_icons.py"
 brand_icon="$repo_root/Assets/Brand/OpenIsland.icns"
-bundle_dir="$HOME/Applications/Open Island Dev.app"
+bundle_dir="$HOME/Applications/$app_name.app"
 plist_path="$bundle_dir/Contents/Info.plist"
 bundle_binary="$bundle_dir/Contents/MacOS/OpenIslandApp"
 
@@ -36,8 +37,8 @@ fi
 mkdir -p "$bundle_dir/Contents/MacOS" "$bundle_dir/Contents/Helpers" "$bundle_dir/Contents/Resources" "$bundle_dir/Contents/Frameworks"
 
 # Kill any running instance before copying so the binary isn't locked.
-osascript -e 'tell application "Open Island Dev" to quit' 2>/dev/null || true
-pkill -9 -f "Open Island Dev" 2>/dev/null || true
+osascript -e "tell application \"$app_name\" to quit" 2>/dev/null || true
+pkill -9 -f "$app_name" 2>/dev/null || true
 sleep 2
 
 command cp "$app_binary" "$bundle_binary"
@@ -80,7 +81,7 @@ cat > "$plist_path" <<EOF
     <key>CFBundleIconFile</key>
     <string>OpenIsland</string>
     <key>CFBundleName</key>
-    <string>Open Island Dev</string>
+    <string>$app_name</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
