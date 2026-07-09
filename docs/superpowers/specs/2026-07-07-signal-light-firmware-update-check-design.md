@@ -35,25 +35,18 @@ signal-light/firmware/version.json    — { "version": "1.1.0", "notes": "option
 signal-light/firmware/signal-light.bin — latest compiled firmware binary
 ```
 
-Publishing a new firmware version is: bump `FIRMWARE_VERSION` in `signal-light/led_esp32c3/config.h`, compile, export the `.bin`, overwrite both files above, commit and push to `wg`. No app-side changes needed per release — the app always requests the same two URLs, served through jsDelivr's GitHub CDN mirror rather than `raw.githubusercontent.com` directly:
+Publishing a new firmware version is: bump `FIRMWARE_VERSION` in `signal-light/led_esp32c3/config.h`, compile, export the `.bin`, overwrite both files above, commit and push to `wg`. No app-side changes needed per release — the app always requests the same two fixed paths, but the two files are served from **different hosts**:
 
 ```
-https://cdn.jsdelivr.net/gh/itdragons/open-vibe-island@wg/signal-light/firmware/version.json
+https://raw.githubusercontent.com/itdragons/open-vibe-island/wg/signal-light/firmware/version.json
 https://cdn.jsdelivr.net/gh/itdragons/open-vibe-island@wg/signal-light/firmware/signal-light.bin
 ```
 
 `itdragons/open-vibe-island` is a public fork, so both URLs are reachable anonymously — no auth token needed.
 
-**Why jsDelivr instead of raw.githubusercontent.com directly:** debugging a reported "download times out" issue found that direct connections to `raw.githubusercontent.com` reliably stall mid-transfer on some networks (reproduced with `curl --noproxy '*'`, consistently stuck partway into the 647KB binary) — a network-level block on that specific host, not an app bug. jsDelivr's edge for the same repo/branch/path was reliable across repeated tests and requires no code-side workaround.
+**Why the binary stays on jsDelivr instead of raw.githubusercontent.com:** debugging a reported "download times out" issue found that direct connections to `raw.githubusercontent.com` reliably stall mid-transfer on some networks (reproduced with `curl --noproxy '*'`, consistently stuck partway into the 647KB binary) — a network-level block on that specific host, not an app bug. jsDelivr's edge for the same repo/branch/path was reliable across repeated tests and requires no code-side workaround. This tradeoff means the binary can lag up to jsDelivr's `s-maxage=43200` (12h) edge-cache window after a publish — accepted, since the binary is only fetched after the manifest has already confirmed a newer version exists.
 
-**Publishing caveat:** jsDelivr caches `@branch` references for a while (not instant like `raw.githubusercontent.com`'s ~5-minute Fastly cache). After publishing a new firmware version, force an immediate cache refresh by hitting jsDelivr's purge endpoint for both files:
-
-```
-https://purge.jsdelivr.net/gh/itdragons/open-vibe-island@wg/signal-light/firmware/version.json
-https://purge.jsdelivr.net/gh/itdragons/open-vibe-island@wg/signal-light/firmware/signal-light.bin
-```
-
-Otherwise the app may keep seeing the previous version for some time after a new one is pushed.
+**Why the manifest moved off jsDelivr to raw.githubusercontent.com (2026-07-09):** the original design put both files on jsDelivr and relied on manually hitting jsDelivr's purge endpoint after every publish to avoid serving a stale manifest. In practice this was easy to forget, and testing found query-string cache-busting doesn't help either — two requests to the same jsDelivr URL differing only by a `?_=` query param came back with identical `age`/`cf-cache-status: HIT`, confirming jsDelivr's edge cache key ignores query strings. Since `version.json` is tiny, it doesn't hit the mid-transfer stall issue above, so it was moved to raw.githubusercontent.com instead: its Fastly cache is short-lived (~5 minutes, per its `Expires` header), bounding staleness without needing any purge step. raw.githubusercontent.com was separately observed to return a transient `429` occasionally, recovering on the very next attempt — `SignalLightFirmwareUpdateChecker`'s retry logic now retries on `429`/`5xx` instead of failing immediately (previously any non-200 skipped retry).
 
 ### `OpenIslandCore`
 
