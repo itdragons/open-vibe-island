@@ -14,19 +14,18 @@ disconnected.
 We want the physical light to visibly indicate "not connected" on its own,
 since it has no other channel to communicate that once disconnected. The
 signal is: all three LEDs (red, yellow, green) breathing in sync — fade in,
-fade out, together — for as long as no BLE central is connected. The Mac
-app's Settings preview should show the same thing whenever it isn't
-connected, so the UI never lies about what the hardware is doing.
+fade out, together — for as long as no BLE central is connected. This is a
+firmware-only behavior; the Mac app's Settings preview is unaffected.
 
 ## Scope
 
-- Firmware: `signal-light/led_esp32c3/led_esp32c3.ino`, `config.h`.
-- App: `Sources/OpenIslandApp/Views/SignalLightSettingsPane.swift` (live
-  preview only) + localization strings.
-- No BLE protocol changes. No new commands. The app doesn't need to detect or
-  react to this state beyond the preview — the firmware handles it
-  autonomously, and the app's existing connect-time resync already restores
-  the correct bucket effect once reconnected.
+- Firmware only: `signal-light/led_esp32c3/led_esp32c3.ino`, `config.h`.
+- No BLE protocol changes. No new commands. No app-side changes — the Mac
+  app's Settings preview (`SignalLightSettingsPane`) and its bucket-effect
+  model are left exactly as they are today. The firmware handles the
+  disconnected state entirely on its own, and the app's existing
+  connect-time resync already restores the correct bucket effect once
+  reconnected.
 
 ## Firmware behavior
 
@@ -72,39 +71,6 @@ Bump `const String FIRMWARE_VERSION` in `config.h` from `"1.0.0"` to
 new binary is a manual step outside this repo's build tooling — not part of
 this change.
 
-## App-side live preview
-
-`SignalLightSettingsPane.livePreviewRow` currently resolves, in order:
-`testPreview` (explicit 5s test-effect override) → off (if
-`!model.signalLightEnabled`) → the current bucket's effect. Insert a new
-check between test-preview and off:
-
-```swift
-let isConnected: Bool = {
-    if case .connected = model.signalLight.status { return true }
-    return false
-}()
-let disconnectedEffect = SignalLightEffect(type: .breathe, colors: [.red, .yellow, .green], intervalMs: 2400)
-```
-
-New priority: `testPreview` → **not connected** (any status other than
-`.connected` — `disconnected`, `connecting`, `scanning`, `poweredOff`,
-`unauthorized`) → off → bucket effect. This mirrors the firmware: from the
-hardware's point of view, all of those statuses mean "no BLE central
-attached," so the preview should show breathing regardless of the app's
-on/off toggle, exactly like the real device would.
-
-`SignalLightPreviewPill` needs no changes — it already renders multi-color
-synchronized `.breathe` effects correctly.
-
-Add a new localized caption (`settings.signalLight.notConnectedPreview`) to
-all three `Localizable.strings` files, shown instead of the bucket-title +
-effect-summary text when not connected:
-
-- en: "Not connected · breathing"
-- zh-Hans: "未连接 · 三色呼吸中"
-- zh-Hant: "未連接 · 三色呼吸中"
-
 ## Out of scope
 
 - OTA flow, PINTEST calibration wizard, SETPIN/SETNAME — untouched.
@@ -115,6 +81,10 @@ effect-summary text when not connected:
   consistent with the other named animation modes (`BUSY`, `ERROR`,
   `ALARM`, etc.), which already only the `EFFECT:` custom-effect path
   respects.
+- Mac app: `SignalLightSettingsPane` live preview, `SignalLightPreviewPill`,
+  and localization strings — no changes. The preview keeps showing the
+  bucket effect / off state exactly as it does today; it does not attempt to
+  mirror the firmware's disconnected-breathing behavior.
 
 ## Testing
 
@@ -122,6 +92,4 @@ effect-summary text when not connected:
   first pairing; connect via app and confirm it switches to the correct
   bucket effect; disconnect (quit app / toggle Bluetooth off) and confirm
   breathing resumes, overriding whatever mode/off-state was active.
-- App: `swift build`; in Settings → Signal Light, toggle/simulate a
-  disconnected state and confirm the live preview shows tri-color breathing
-  and the new caption, independent of the light on/off switch.
+- App: no changes, so no app-side testing needed for this spec.
