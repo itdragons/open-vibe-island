@@ -11,6 +11,7 @@ struct SignalLightSettingsPane: View {
     @State private var renameText = ""
     @State private var isShowingRenameReconnectNotice = false
     @State private var wizard: SignalLightCalibrationWizard?
+    @State private var lightSwitchWasOnBeforeCalibration = false
     @State private var isDeviceManagementExpanded = false
     @State private var testTimeoutTask: Task<Void, Never>?
     @State private var expandedSignalLightBucket: SignalLightBucket?
@@ -611,6 +612,15 @@ struct SignalLightSettingsPane: View {
     // MARK: Wiring Calibration
 
     private func beginCalibration() {
+        if !model.signalLight.isCalibrating {
+            lightSwitchWasOnBeforeCalibration = model.signalLightEnabled
+            model.signalLightEnabled = false
+        }
+        // Always clear the device before testing (including on "Redo") so a
+        // leftover effect — the idle bucket's glow, or the previous run's
+        // confirmation cycle — can't be mistaken for the pin under test.
+        model.signalLight.sendRaw(SignalLightControlCommand.off)
+
         let newWizard = SignalLightCalibrationWizard(candidatePins: SignalLightCalibrationWizard.defaultCandidatePins)
         model.signalLight.isCalibrating = true
         if let pin = newWizard.currentPin {
@@ -646,21 +656,18 @@ struct SignalLightSettingsPane: View {
     private func closeCalibration() {
         model.signalLight.isCalibrating = false
         wizard = nil
-        resyncLightSwitchState()
+        model.signalLightEnabled = lightSwitchWasOnBeforeCalibration
     }
 
     private func cancelCalibration() {
         model.signalLight.isCalibrating = false
         wizard = nil
-        resyncLightSwitchState()
+        model.signalLightEnabled = lightSwitchWasOnBeforeCalibration
     }
 
-    /// Restores the light to whatever it should be showing once calibration
-    /// ends — the current bucket's effect if the light switch is on, or an
-    /// explicit `OFF` if it's off. Without this, ending calibration while
-    /// switched off would leave the last-tested PINTEST pin lit (or, before
-    /// this fix, `closeCalibration` would ignore the switch entirely and
-    /// turn the light back on).
+    /// Restores the light to whatever it should be showing right now — the
+    /// current bucket's effect if the light switch is on, or an explicit
+    /// `OFF` if it's off. Used after a per-bucket test preview times out.
     private func resyncLightSwitchState() {
         if model.signalLightEnabled {
             let bucket = SignalLightBucketResolver.resolve(model.state)
