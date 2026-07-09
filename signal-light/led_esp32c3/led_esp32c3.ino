@@ -62,7 +62,8 @@ enum LedMode {
   MODE_ERROR,
   MODE_ALARM,
   MODE_CUSTOM_EFFECT,
-  MODE_PIN_TEST
+  MODE_PIN_TEST,
+  MODE_DISCONNECTED // 未连接任何 BLE 客户端时的提示态：三色呼吸，等待配对/重连
 };
 
 LedMode currentMode = MODE_MANUAL; // 当前正在渲染的模式
@@ -124,9 +125,12 @@ void handleSetNameCommand(String cmd);
 void handleBrightnessCommand(String cmd);
 int currentOnValue();
 
-// 客户端断开连接后重新开启广播，方便下一次连接
+// 客户端断开连接后：立即切换到"未连接"三色呼吸提示态（无条件覆盖灯开关
+// 与上一个模式——断开时 App 已无法控制灯光，呼吸提示比停留在旧状态更有用），
+// 再重新开启广播，方便下一次连接。重连后 App 会自行 resync 回正确的效果。
 class ServerCallback : public BLEServerCallbacks {
   void onDisconnect(BLEServer *server) {
+    startMode(MODE_DISCONNECTED);
     delay(BLE_RECONNECT_DELAY_MS);
     server->startAdvertising();
   }
@@ -241,6 +245,9 @@ void setup() {
   advertising->addServiceUUID(SERVICE_UUID);
   advertising->start();
 
+  // 开机即进入"未连接"三色呼吸提示态，直到 App 首次连接并推送真正的效果
+  startMode(MODE_DISCONNECTED);
+
   Serial.println("BLE ready.");
   Serial.println("Commands: OTA_BEGIN:<bytes>, OTA_END, OTA_ABORT, OTA_STATUS");
 }
@@ -316,7 +323,10 @@ void updateLights() {
     animateGreenBlink(nowMs);
   } else if (currentMode == MODE_THINKING) {
     animateThinking(nowMs);
-  } else if (currentMode == MODE_WORKING) {
+  } else if (currentMode == MODE_WORKING || currentMode == MODE_DISCONNECTED) {
+    // MODE_DISCONNECTED 复用 WORKING 的三色同步呼吸渲染；两者不会同时出现
+    // （前者仅在已连接且 App 主动驱动时生效，后者仅在未连接时生效），共用
+    // 同一种视觉效果不会造成用户混淆。
     animateWorking(nowMs);
   } else if (currentMode == MODE_BUSY) {
     animateBusy(nowMs);
