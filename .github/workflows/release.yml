@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      # Rolling pre-release builds from the wg working branch. These publish a
+      # prerelease with downloadable artifacts but never touch appcast/homebrew
+      # or the main branch — see the "mode" gating below.
+      - 'wg'
 
 permissions:
   contents: write
@@ -17,9 +22,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Extract version from tag
+      - name: Determine release mode
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          # A v* tag → full official release. The wg branch → rolling prerelease
+          # that produces downloadable artifacts only (no appcast/homebrew/main).
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "release_tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=prerelease" >> "$GITHUB_OUTPUT"
+            echo "version=0.0.0-wg.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+            echo "release_tag=wg-latest" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install dependencies
         run: |
@@ -206,7 +224,7 @@ jobs:
           echo "EdDSA signature: $ed_signature (length: $length)"
 
       - name: Update appcast.xml
-        if: steps.sparkle_sign.outputs.signed == 'true'
+        if: steps.version.outputs.mode == 'release' && steps.sparkle_sign.outputs.signed == 'true'
         run: |
           zsh scripts/update-appcast.sh \
             "${{ steps.version.outputs.version }}" \
@@ -216,7 +234,7 @@ jobs:
           cat appcast.xml
 
       - name: Update appcast.xml via PR
-        if: steps.sparkle_sign.outputs.signed == 'true'
+        if: steps.version.outputs.mode == 'release' && steps.sparkle_sign.outputs.signed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -241,22 +259,42 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MODE: ${{ steps.version.outputs.mode }}
+          RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "Open Island $GITHUB_REF_NAME" \
-            --generate-notes \
-            --notes-start-tag "$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')" \
-            --draft \
-            "output/package/Open Island.dmg#Open Island.dmg (macOS, Universal)" \
-            "output/package/Open Island.zip#Open Island.zip (macOS, Universal)"
+          dmg="output/package/Open Island.dmg#Open Island.dmg (macOS, Universal)"
+          zip="output/package/Open Island.zip#Open Island.zip (macOS, Universal)"
+          if [[ "$MODE" == "prerelease" ]]; then
+            # Rolling prerelease for the wg branch: replace the previous one so
+            # the tag always points at the latest wg commit. Marked prerelease
+            # so it never becomes the repository's "Latest" release.
+            gh release delete "$RELEASE_TAG" --cleanup-tag --yes || true
+            gh release create "$RELEASE_TAG" \
+              --title "Open Island (wg build ${RUN_NUMBER})" \
+              --target "$GITHUB_SHA" \
+              --prerelease \
+              --notes "Automated pre-release build from the \`wg\` branch (run ${RUN_NUMBER}, commit ${GITHUB_SHA:0:7}). Not an official release." \
+              "$dmg" \
+              "$zip"
+          else
+            gh release create "$RELEASE_TAG" \
+              --title "Open Island $RELEASE_TAG" \
+              --generate-notes \
+              --notes-start-tag "$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')" \
+              --draft \
+              "$dmg" \
+              "$zip"
+          fi
 
       - name: Append install instructions to release notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTARIZED: ${{ steps.notarize.outputs.notarized }}
           SIGNED: ${{ steps.signing.outputs.signed }}
+          RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
         run: |
-          existing="$(gh release view "$GITHUB_REF_NAME" --json body -q .body)"
+          existing="$(gh release view "$RELEASE_TAG" --json body -q .body)"
           if [[ "$NOTARIZED" == "true" ]]; then
             install_note="> This build is signed and notarized by Apple. It will launch without Gatekeeper warnings."
           elif [[ "$SIGNED" == "true" ]]; then
@@ -264,7 +302,7 @@ jobs:
           else
             install_note=$'> This build is **not signed** with a Developer ID certificate. macOS Gatekeeper will block it on first launch.\n>\n> After moving the app to **Applications**, run this once in Terminal to allow it:\n>\n> ```\n> xattr -dr com.apple.quarantine \"/Applications/Open Island.app\"\n> ```'
           fi
-          gh release edit "$GITHUB_REF_NAME" --notes "$(cat <<EOF
+          gh release edit "$RELEASE_TAG" --notes "$(cat <<EOF
           ${existing}
 
           ---
@@ -279,7 +317,7 @@ jobs:
           )"
 
       - name: Update Homebrew tap cask
-        if: vars.SKIP_HOMEBREW != 'true'
+        if: steps.version.outputs.mode == 'release' && vars.SKIP_HOMEBREW != 'true'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -327,6 +365,7 @@ jobs:
           gh pr merge "$branch" --repo Octane0411/homebrew-tap --merge --delete-branch
 
       - name: Refresh contributors image cache via PR
+        if: steps.version.outputs.mode == 'release'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
