@@ -31,8 +31,19 @@ jobs:
         env:
           CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          SKIP_SIGN: ${{ vars.SKIP_SIGN }}
           SKIP_NOTARIZE: ${{ vars.SKIP_NOTARIZE }}
         run: |
+          # No certificate available (opt-out or missing secret) → produce an
+          # ad-hoc signed, unsigned release instead of failing the whole run.
+          if [[ "${SKIP_SIGN:-}" == "true" || -z "$CERTIFICATE_P12" ]]; then
+            reason="SKIP_SIGN=${SKIP_SIGN:-<unset>}, certificate present: $([[ -n "$CERTIFICATE_P12" ]] && echo yes || echo no)"
+            echo "::warning::Skipping code signing ($reason). Producing an ad-hoc (unsigned) release."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "notary_ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # Decode the p12 certificate from base64
           CERT_FILE="$(mktemp).p12"
           echo "$CERTIFICATE_P12" | base64 --decode > "$CERT_FILE"
@@ -44,12 +55,18 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          # Import the certificate (.p12 = identity = cert + private key)
-          security import "$CERT_FILE" \
+          # Import the certificate (.p12 = identity = cert + private key).
+          # A failure here almost always means the APPLE_CERTIFICATE_P12 secret
+          # is not valid base64 of a .p12, or APPLE_CERTIFICATE_PASSWORD is wrong.
+          if ! security import "$CERT_FILE" \
             -P "$CERTIFICATE_PASSWORD" \
             -A \
             -f pkcs12 \
-            -k "$KEYCHAIN_PATH"
+            -k "$KEYCHAIN_PATH"; then
+            echo "::error::Failed to import APPLE_CERTIFICATE_P12. Verify the secret is base64 of a valid .p12 (base64 -b 0 -i cert.p12) and that APPLE_CERTIFICATE_PASSWORD matches. To ship an unsigned build instead, set repository variable SKIP_SIGN=true."
+            exit 1
+          fi
+          echo "signed=true" >> "$GITHUB_OUTPUT"
           security set-key-partition-list \
             -S apple-tool:,apple: \
             -k "$KEYCHAIN_PASSWORD" \
@@ -85,7 +102,7 @@ jobs:
           OPEN_ISLAND_BUNDLE_ID: "app.openisland.OpenIsland"
           OPEN_ISLAND_VERSION: ${{ steps.version.outputs.version }}
           OPEN_ISLAND_BUILD_NUMBER: ${{ github.run_number }}
-          OPEN_ISLAND_SIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          OPEN_ISLAND_SIGN_IDENTITY: ${{ steps.signing.outputs.signed == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
           OPEN_ISLAND_UNIVERSAL: "true"
         run: zsh scripts/package-app.sh
 
@@ -96,13 +113,19 @@ jobs:
           ls -lh output/package/
 
       - name: Verify code signature
+        env:
+          SIGNED: ${{ steps.signing.outputs.signed }}
         run: |
           bundle="output/package/Open Island.app"
           echo "--- Signature info ---"
-          codesign -dvv "$bundle"
-          echo ""
-          echo "--- Signature verification ---"
-          codesign --verify --deep --strict --verbose=2 "$bundle"
+          codesign -dvv "$bundle" || true
+          if [[ "$SIGNED" == "true" ]]; then
+            echo ""
+            echo "--- Signature verification ---"
+            codesign --verify --deep --strict --verbose=2 "$bundle"
+          else
+            echo "Ad-hoc (unsigned) build; skipping strict Developer ID verification."
+          fi
 
       - name: Verify bundle structure
         run: |
@@ -231,12 +254,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTARIZED: ${{ steps.notarize.outputs.notarized }}
+          SIGNED: ${{ steps.signing.outputs.signed }}
         run: |
           existing="$(gh release view "$GITHUB_REF_NAME" --json body -q .body)"
           if [[ "$NOTARIZED" == "true" ]]; then
             install_note="> This build is signed and notarized by Apple. It will launch without Gatekeeper warnings."
-          else
+          elif [[ "$SIGNED" == "true" ]]; then
             install_note="> This build is signed with a Developer ID certificate. On first launch, right-click → **Open** to bypass Gatekeeper."
+          else
+            install_note=$'> This build is **not signed** with a Developer ID certificate. macOS Gatekeeper will block it on first launch.\n>\n> After moving the app to **Applications**, run this once in Terminal to allow it:\n>\n> ```\n> xattr -dr com.apple.quarantine \"/Applications/Open Island.app\"\n> ```'
           fi
           gh release edit "$GITHUB_REF_NAME" --notes "$(cat <<EOF
           ${existing}
