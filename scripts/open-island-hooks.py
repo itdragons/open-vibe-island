@@ -13,7 +13,6 @@ Usage (configured in Claude Code settings.json or Codex hooks.json):
 import json
 import os
 import socket
-import struct
 import subprocess
 import sys
 
