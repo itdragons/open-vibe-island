@@ -25,7 +25,7 @@ const int SAFE_GPIO_PIN_COUNT = sizeof(SAFE_GPIO_PINS) / sizeof(SAFE_GPIO_PINS[0
 // 蓝牙配置 (BLE Configuration) — 出厂默认前缀，实际广播名称存在 NVS 里，
 // 首次开机直接以此前缀写入；app 改名后写回 NVS，固件更新不会覆盖。
 // -----------------------------------------------------------------------------
-const String BLE_NAME_PREFIX = "wg-plus-1";
+const String BLE_NAME_PREFIX = "WG";
 
 // 基础 UUID: "wisdomgarden" 的 ASCII 十六进制编码加序号
 #define SERVICE_UUID "77697364-6f6d-6761-7264-656e00000001"
