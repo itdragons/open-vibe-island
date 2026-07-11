@@ -7,9 +7,11 @@
 ---
 
 ## 🚦 目录指南
+- **`bridge-ctl.sh`**：【推荐】统一一键式管理入口脚本。支持服务启停、重载、状态检查，以及一键调起校准、OTA 升级、设备改名等。
 - **`signal-light-bridge.py`**：状态监控与权限审批桥接服务器。接收 Agent 的 Hook 并驱动硬件灯效。
 - **`calibrate.py`**：硬件 LED 引脚接线校准工具。通电测试引脚并将结果永久保存到板子的闪存 (NVS) 中。
 - **`flash_ota.py`**：固件无线 (OTA) 升级工具。通过蓝牙将编译好的 `.bin` 固件刷入硬件中。
+- **`device_name.py`**：设备蓝牙广播名称查询与修改工具。
 - **`test_ble.py`**：低级蓝牙指令调试工具。
 
 ---
@@ -25,6 +27,52 @@ source .venv/bin/activate
 # 2. 安装 bleak
 pip install bleak
 ```
+
+---
+
+## 🎛️ 推荐：统一控制中心 (`bridge-ctl.sh`)
+
+为了简化操作，我们提供了一个统一的 Shell 控制脚本。它会自动探测 Python 环境（支持本地虚拟环境 `.venv`/`venv`、以及 `uv` 和 `poetry`），并且自动处理蓝牙占用与状态初始化，是**最推荐的日常使用入口**。
+
+### 服务控制与状态：
+* **后台启动服务**：
+  ```bash
+  ./signal-light/bridge-ctl.sh
+  ```
+  *(如果是首次启动，会自动前台运行扫描，让你交互式选择并保存蓝牙设备)*
+* **强制重启（关闭旧实例并重新运行）**：
+  ```bash
+  ./signal-light/bridge-ctl.sh --force
+  ```
+* **查看服务状态与最近 10 行日志**：
+  ```bash
+  ./signal-light/bridge-ctl.sh --status
+  ```
+* **停止服务**：
+  ```bash
+  ./signal-light/bridge-ctl.sh --stop
+  ```
+
+### 硬件测试与配置：
+*(脚本执行这些指令时会自动检测，若后台桥接服务正在运行，会拦截并提示你先停止它，以防抢占 CoreBluetooth 蓝牙通道)*
+* **启动接线校准**：
+  ```bash
+  ./signal-light/bridge-ctl.sh --calibrate
+  ```
+* **无线固件 OTA 升级**：
+  ```bash
+  ./signal-light/bridge-ctl.sh --ota
+  # 也可以指定 .bin 文件路径：
+  ./signal-light/bridge-ctl.sh --ota --file path/to/firmware.bin
+  ```
+* **查看当前设备蓝牙名称**：
+  ```bash
+  ./signal-light/bridge-ctl.sh --device-name
+  ```
+* **修改设备蓝牙名称**：
+  ```bash
+  ./signal-light/bridge-ctl.sh --set-name "NewName"
+  ```
 
 ---
 
