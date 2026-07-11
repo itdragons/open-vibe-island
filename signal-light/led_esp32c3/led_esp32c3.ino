@@ -42,7 +42,6 @@ const unsigned long WORKING_BREATHE_PERIOD_MS = 2400; // WORKING 模式呼吸灯
 const unsigned long OTA_RESTART_DELAY_MS = 3000;      // OTA 成功后延迟重启的等待时间
 const unsigned long RENAME_RESTART_DELAY_MS = 3000;   // 改名成功后延迟重启的等待时间
 const unsigned long PIN_TEST_TIMEOUT_MS = 5000;       // 接线测试单次点亮的超时时间
-const unsigned long SERIAL_ENUMERATION_TIMEOUT_MS = 3000; // 等待 USB 串口枚举完成的超时时间
 const unsigned long BLE_RECONNECT_DELAY_MS = 100;     // 客户端断开后、重新开启广播前的延迟
 const unsigned long BUTTON_HOLD_MS = 800;             // 按键需持续按住这么久才触发关机，短暂/意外触碰不会误关机
 
@@ -169,11 +168,10 @@ class OtaDataCallback : public BLECharacteristicCallbacks {
 };
 
 void setup() {
+  // 不等待 USB 串口枚举完成：物理按键开机后 loop() 要等 setup() 完全返回
+  // 才会开始渲染灯光，这里阻塞多久，灯就要晚亮多久。串口日志有没接上都
+  // 直接打印，接上监视器晚了就错过最早几行，下次重新开机再看即可。
   Serial.begin(115200);
-  // 对于 ESP32-C3，USB 串口需要一点时间在电脑上枚举
-  unsigned long startWait = millis();
-  while (!Serial && millis() - startWait < SERIAL_ENUMERATION_TIMEOUT_MS) { delay(10); }
-  delay(500);
 
   Serial.println();
   Serial.println("============================");
