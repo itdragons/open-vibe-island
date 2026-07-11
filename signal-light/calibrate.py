@@ -16,8 +16,8 @@ OTA_CONTROL_UUID = "77697364-6f6d-6761-7264-656e00000003"
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_FILE = os.path.join(SCRIPT_DIR, ".selected_device")
 
-# ESP32-C3 Safe GPIO Pins
-CANDIDATE_PINS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 21]
+# ESP32-C3 Safe GPIO Pins (0 保留给物理开关机按键，固件已拒绝分配/测试该引脚)
+CANDIDATE_PINS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 21]
 
 # Global state to capture notifications
 config_future = None

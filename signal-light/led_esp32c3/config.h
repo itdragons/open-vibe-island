@@ -11,16 +11,21 @@ const int DEFAULT_LED_GREEN = 5;
 const int DEFAULT_LED_RED = 7;
 const int DEFAULT_LED_YELLOW = 6;
 
+// 物理开关机按键引脚（无自锁开关，接 GND，内部上拉）。固定接线，不经 NVS
+// 重新分配；旧硬件上该引脚悬空未接，不影响其正常运行。
+const int BUTTON_PIN = 0;
+
 // 接线校准向导允许测试的安全 GPIO 列表（ESP32-C3 Super Mini 可用引脚，
-// 排除原生 USB 占用的 18/19）。
-const int SAFE_GPIO_PINS[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 21};
-const int SAFE_GPIO_PIN_COUNT = 13;
+// 排除原生 USB 占用的 18/19、被按键占用的 0，以及不用于功能的 2/8/9）。
+// 数量用 sizeof 自动计算，避免再次出现数组和数量对不上导致的越界读取。
+const int SAFE_GPIO_PINS[] = {1, 3, 4, 5, 6, 7, 10, 20, 21};
+const int SAFE_GPIO_PIN_COUNT = sizeof(SAFE_GPIO_PINS) / sizeof(SAFE_GPIO_PINS[0]);
 
 // -----------------------------------------------------------------------------
 // 蓝牙配置 (BLE Configuration) — 出厂默认前缀，实际广播名称存在 NVS 里，
 // 首次开机直接以此前缀写入；app 改名后写回 NVS，固件更新不会覆盖。
 // -----------------------------------------------------------------------------
-const String BLE_NAME_PREFIX = "drg1";
+const String BLE_NAME_PREFIX = "wg-plus-1";
 
 // 基础 UUID: "wisdomgarden" 的 ASCII 十六进制编码加序号
 #define SERVICE_UUID "77697364-6f6d-6761-7264-656e00000001"

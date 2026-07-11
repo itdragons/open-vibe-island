@@ -4,6 +4,7 @@
 #include <BLE2902.h>
 #include <Update.h>
 #include <Preferences.h>
+#include <esp_sleep.h>
 #include "config.h"
 
 
@@ -43,6 +44,7 @@ const unsigned long RENAME_RESTART_DELAY_MS = 3000;   // 改名成功后延迟�
 const unsigned long PIN_TEST_TIMEOUT_MS = 5000;       // 接线测试单次点亮的超时时间
 const unsigned long SERIAL_ENUMERATION_TIMEOUT_MS = 3000; // 等待 USB 串口枚举完成的超时时间
 const unsigned long BLE_RECONNECT_DELAY_MS = 100;     // 客户端断开后、重新开启广播前的延迟
+const unsigned long BUTTON_HOLD_MS = 800;             // 按键需持续按住这么久才触发关机，短暂/意外触碰不会误关机
 
 int brightnessPercent = 100; // 0-100，通过 BRIGHTNESS 命令调节；App 重连后会重新同步
 
@@ -102,6 +104,10 @@ unsigned long restartAtMs = 0;                // 达到该时间点后执行重�
 bool restartAfterRename = false;            // 改名成功后，是否需要延迟重启
 unsigned long restartAfterRenameAtMs = 0;   // 达到该时间点后执行重启（配合 restartAfterRename）
 
+bool lastButtonState = HIGH;           // 按键上一次读到的电平，HIGH->LOW 的下降沿即视为一次按压的开始
+unsigned long buttonPressStartMs = 0;  // 本次按压开始的时间戳，配合 BUTTON_HOLD_MS 判断是否达到长按阈值
+bool buttonHoldTriggered = false;      // 本次按压是否已触发过关机，避免持续按住时重复触发
+
 // 函数前向声明，方便在文件中以任意顺序定义/调用
 void handleCommand(String cmd);
 bool handleModeCommand(String cmd);
@@ -124,6 +130,9 @@ void endPinTestIfExpired(unsigned long nowMs);
 void handleSetNameCommand(String cmd);
 void handleBrightnessCommand(String cmd);
 int currentOnValue();
+int scaleToOnValue(int rawValue, int onValue);
+void checkButton();
+void enterDeepSleep();
 
 // 客户端断开连接后：立即切换到"未连接"三色呼吸提示态（无条件覆盖灯开关
 // 与上一个模式——断开时 App 已无法控制灯光，呼吸提示比停留在旧状态更有用），
@@ -169,6 +178,7 @@ void setup() {
   Serial.println();
   Serial.println("============================");
   Serial.println("C3 LED starting...");
+  Serial.println("Wakeup cause: " + String(esp_sleep_get_wakeup_cause()));
 
   // 从 NVS 读取持久化的引脚分配与蓝牙名称；全新芯片没有记录时用 config.h 默认值
   prefs.begin("wglight", false);
@@ -180,17 +190,31 @@ void setup() {
     bleName = BLE_NAME_PREFIX;
     prefs.putString("bleName", bleName);
   }
+  // 亮度不在每次调节时写 NVS（避免拖动滑杆时频繁写 flash），只在真正关机前
+  // 写一次（见 enterDeepSleep），这里读回来的是"上次关机时的亮度"，仅作为
+  // App 连接前的初始值；App 连接后会立即用 BRIGHTNESS 命令覆盖为它自己的值。
+  brightnessPercent = prefs.getInt("brightness", 100);
   Serial.println("Pins -> R:" + String(led_red) + " Y:" + String(led_yellow) + " G:" + String(led_green));
   Serial.println("BLE name -> " + bleName);
 
-  // 将三路 LED 引脚初始化为输出模式
+  // 将三路 LED 引脚初始化为输出模式。先写入熄灭电平（HIGH，反相逻辑下=灭）
+  // 再切换成 OUTPUT：pinMode(OUTPUT) 生效那一刻引脚默认电平是低电平，反相
+  // 逻辑下低电平=点亮，先把电平写好可以避免这一瞬间被误点亮。
+  digitalWrite(led_green, HIGH);
   pinMode(led_green, OUTPUT);
+  digitalWrite(led_red, HIGH);
   pinMode(led_red, OUTPUT);
+  digitalWrite(led_yellow, HIGH);
   pinMode(led_yellow, OUTPUT);
-  // 未接实体按键，无需初始化按键引脚
 
-  // 上电后先按默认手动值点亮一次，避免灯光短暂处于未定义状态
-  showManualLights();
+  // 无自锁开关，接 GND，内部上拉；旧硬件该引脚悬空，稳定读 HIGH，不会误触发
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  lastButtonState = digitalRead(BUTTON_PIN);
+
+  // 再用 PWM 方式确认一次熄灭状态，交给后续的 analogWrite 接管；不用
+  // showManualLights() 是因为它固定用 LED_ON（100% 亮度）点亮，会在
+  // MODE_DISCONNECTED 接管前的这一瞬间无视用户设置的亮度，闪一下满亮
+  turnOffLights();
 
   // 初始化 BLE 协议栈，并调大 MTU 以提升 OTA 数据传输效率
   BLEDevice::init(bleName.c_str());
@@ -274,7 +298,7 @@ void loop() {
     }
   }
 
-  // checkButton(); // 硬件无实体按键，已移除
+  checkButton();
 
   endPinTestIfExpired(millis());
 
@@ -286,7 +310,53 @@ void loop() {
   updateLights();
 }
 
-// 硬件没有实体按键，checkButton 相关逻辑已移除
+// 检测按键是否被持续按住超过 BUTTON_HOLD_MS 才触发关机——不是简单的下降沿
+// 立即触发。校准/接线等手持操作时短暂碰到引脚很常见，长按阈值可以过滤掉
+// 这类瞬间误触，只有真正按住不放才会关机。
+// 不判断当前 lightOn/模式，也不受 BLE 的 OFF/CLOSE/IDLE 命令影响，按键始终
+// 是"真关机"，与软熄灯命令相互独立。
+void checkButton() {
+  bool buttonState = digitalRead(BUTTON_PIN);
+
+  if (lastButtonState == HIGH && buttonState == LOW) {
+    // 重新计时，让每次按下都独立判断是否达到长按阈值
+    buttonPressStartMs = millis();
+    buttonHoldTriggered = false;
+  }
+
+  if (buttonState == LOW && !buttonHoldTriggered &&
+      millis() - buttonPressStartMs >= BUTTON_HOLD_MS) {
+    buttonHoldTriggered = true;
+    enterDeepSleep();
+  }
+
+  lastButtonState = buttonState;
+}
+
+// 进入深度睡眠（真正关机）。OTA 升级中禁止关机；等按键释放后再使能 GPIO
+// 唤醒，避免按键还按着就进入深睡眠、被同一次按压立刻唤醒。
+void enterDeepSleep() {
+  if (otaActive) {
+    return;
+  }
+
+  Serial.println(">>> 按键触发，进入深度睡眠");
+  Serial.flush();
+
+  // 真关机会清空内存，唯独把亮度存一下：低频事件（每次关机一次），不会
+  // 造成拖动滑杆那样的 flash 磨损问题
+  prefs.putInt("brightness", brightnessPercent);
+
+  turnOffLights();
+
+  while (digitalRead(BUTTON_PIN) == LOW) {
+    delay(10);
+  }
+  delay(50);
+
+  esp_deep_sleep_enable_gpio_wakeup(1ULL << BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
+  esp_deep_sleep_start();
+}
 
 // 底层输出：直接写三路 PWM（反相逻辑，数值越小越亮）
 void setLights(int red, int yellow, int green) {
@@ -346,7 +416,7 @@ void updateLights() {
 // GREEN_BLINK 模式：绿灯按固定间隔闪烁
 void animateGreenBlink(unsigned long nowMs) {
   bool on = (nowMs / GREEN_BLINK_INTERVAL_MS) % 2 == 0;
-  setLights(LED_OFF, LED_OFF, on ? LED_ON : LED_OFF);
+  setLights(LED_OFF, LED_OFF, on ? currentOnValue() : LED_OFF);
 }
 
 // THINKING 模式：三色按固定间隔轮转，制造"思考中"的观感
@@ -358,18 +428,27 @@ void animateThinking(unsigned long nowMs) {
   lastFrameMs = nowMs;
   frame = (frame + 1) % 3;
 
+  int onValue = currentOnValue();
+  int dimValue = scaleToOnValue(LED_DIM, onValue);
+
   if (frame == 0) {
-    setLights(LED_ON, LED_DIM, LED_OFF);
+    setLights(onValue, dimValue, LED_OFF);
   } else if (frame == 1) {
-    setLights(LED_OFF, LED_ON, LED_DIM);
+    setLights(LED_OFF, onValue, dimValue);
   } else {
-    setLights(LED_DIM, LED_OFF, LED_ON);
+    setLights(dimValue, LED_OFF, onValue);
   }
 }
 
 // 把 0-100 的亮度百分比换算成反相 PWM 下的"点亮"数值
 int currentOnValue() {
   return map(brightnessPercent, 0, 100, LED_OFF, LED_ON);
+}
+
+// 把一个 LED_ON..LED_OFF 范围内的原始 PWM 值（如呼吸灯曲线、半亮档位），
+// 按亮度等比缩放到 onValue..LED_OFF 范围，使其相对亮度不变
+int scaleToOnValue(int rawValue, int onValue) {
+  return map(rawValue, LED_ON, LED_OFF, onValue, LED_OFF);
 }
 
 // 计算呼吸灯在一个周期内当前的 PWM 值：前半周期从灭渐亮，后半周期从亮渐灭
@@ -383,33 +462,40 @@ int breathValue(unsigned long nowMs, unsigned long periodMs) {
   return map(phase, periodMs / 2, periodMs, LED_ON, LED_OFF);
 }
 
-// WORKING 模式：用呼吸灯效果表现"正在生成"的状态
+// WORKING 模式：用呼吸灯效果表现"正在生成"的状态。呼吸曲线以本次进入模式
+// 的时刻为起点（而不是绝对的 millis()），保证每次切换到这个模式都是从灭
+// 开始渐亮，不会因为 millis() 恰好落在曲线中段而一进入就显得忽然变亮
 void animateWorking(unsigned long nowMs) {
-  int value = breathValue(nowMs, WORKING_BREATHE_PERIOD_MS);
-  setLights(value, value, value);
+  if (lastFrameMs == 0) {
+    lastFrameMs = nowMs;
+  }
+  int value = breathValue(nowMs - lastFrameMs, WORKING_BREATHE_PERIOD_MS);
+  int scaledValue = scaleToOnValue(value, currentOnValue());
+  setLights(scaledValue, scaledValue, scaledValue);
 }
 
 // BUSY 模式：黄灯按固定间隔闪烁
 void animateBusy(unsigned long nowMs) {
   bool on = (nowMs / BUSY_BLINK_INTERVAL_MS) % 2 == 0;
-  setLights(LED_OFF, on ? LED_ON : LED_OFF, LED_OFF);
+  setLights(LED_OFF, on ? currentOnValue() : LED_OFF, LED_OFF);
 }
 
 // SUCCESS 模式：常亮绿灯
 void animateSuccess() {
-  setLights(LED_OFF, LED_OFF, LED_ON);
+  setLights(LED_OFF, LED_OFF, currentOnValue());
 }
 
 // ERROR 模式：红灯快速闪烁
 void animateError(unsigned long nowMs) {
   bool on = (nowMs / ERROR_BLINK_INTERVAL_MS) % 2 == 0;
-  setLights(on ? LED_ON : LED_OFF, LED_OFF, LED_OFF);
+  setLights(on ? currentOnValue() : LED_OFF, LED_OFF, LED_OFF);
 }
 
 // ALARM 模式：红黄交替闪烁，用于强提醒
 void animateAlarm(unsigned long nowMs) {
   bool redOn = (nowMs / ALARM_BLINK_INTERVAL_MS) % 2 == 0;
-  setLights(redOn ? LED_ON : LED_OFF, redOn ? LED_OFF : LED_ON, LED_OFF);
+  int onValue = currentOnValue();
+  setLights(redOn ? onValue : LED_OFF, redOn ? LED_OFF : onValue, LED_OFF);
 }
 
 // 解析并启动一个自定义效果（纯色/闪烁/流转/呼吸）
@@ -510,7 +596,7 @@ void animateCustomEffect(unsigned long nowMs) {
   } else if (customEffectType == EFFECT_BREATHE) {
     unsigned long period = customEffectIntervalMs == 0 ? 1 : customEffectIntervalMs;
     int rawValue = breathValue(nowMs, period);
-    int scaledValue = map(rawValue, LED_ON, LED_OFF, onValue, LED_OFF);
+    int scaledValue = scaleToOnValue(rawValue, onValue);
     applyCustomEffectValue(red, yellow, green, scaledValue, -1);
   }
 

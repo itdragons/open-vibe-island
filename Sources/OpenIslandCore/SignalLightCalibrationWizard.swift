@@ -16,8 +16,9 @@ public enum SignalLightWizardObservation: Sendable {
 /// and feeds answers back in.
 public struct SignalLightCalibrationWizard: Sendable, Equatable {
     /// ESP32-C3 Super Mini safe GPIO pins, matching the firmware's
-    /// `SAFE_GPIO_PINS` allow-list in `config.h`.
-    public static let defaultCandidatePins = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 21]
+    /// `SAFE_GPIO_PINS` allow-list in `config.h` (0 is reserved for the
+    /// physical power button; 2/8/9 aren't used for anything on this board).
+    public static let defaultCandidatePins = [1, 3, 4, 5, 6, 7, 10, 20, 21]
 
     public let candidatePins: [Int]
     public private(set) var currentIndex: Int
