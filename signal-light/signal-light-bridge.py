@@ -199,7 +199,7 @@ def print_claude_hook_instructions(socket_path):
 1. 打开或创建 Claude Code 配置文件：
    👉 {claude_config_path}
 
-2. 将以下 JSON 配置内容复制/合并到你的 "hooks" 字段下：
+2. 将以下 JSON 配置内容复制/合并到你的 "hooks" 字段下，注意修改 Python 路径：
 
 ```json
 {hooks_json}
@@ -497,9 +497,8 @@ async def handle_client_connection(reader, writer):
             # 审批已当场给出结论（交互式 y/n 或自动批准），
             # 会话回到 running，不再停留在报警灯效上
             if (
-                (args.interactive or args.auto_approve)
-                and session_id in session_tracker.sessions
-            ):
+                args.interactive or args.auto_approve
+            ) and session_id in session_tracker.sessions:
                 session_tracker.sessions[session_id] = "running"
                 await update_signal_light()
 
@@ -538,7 +537,35 @@ async def main():
     parser.add_argument(
         "--select", action="store_true", help="强制重新扫描并选择蓝牙设备"
     )
+    parser.add_argument(
+        "--print-instructions",
+        action="store_true",
+        help="仅打印 Claude Code Hooks 配置和灯效说明后退出（供 bridge-ctl.sh 调用）",
+    )
+    parser.add_argument(
+        "--scan-and-save",
+        action="store_true",
+        help="交互式扫描并选择蓝牙设备，保存到本地后退出（供 bridge-ctl.sh 首次启动调用）",
+    )
     args = parser.parse_args()
+
+    # --print-instructions: 仅打印配置指南后立即退出，
+    # 供 bridge-ctl.sh 在后台启动前先展示给用户看。
+    if args.print_instructions:
+        print_claude_hook_instructions(args.socket)
+        return
+
+    # --scan-and-save: 前台交互选择设备，保存后退出。
+    # 供 bridge-ctl.sh 在首次启动（无 .selected_device）时调用。
+    if args.scan_and_save:
+        args.select = True  # 强制进入扫描流程
+        success = await scan_and_select_device()
+        if success:
+            print("✅ 设备已保存，后续启动将自动使用此设备。")
+        else:
+            print("❌ 未能选择设备。")
+            sys.exit(1)
+        return
 
     if args.interactive and args.auto_approve:
         parser.error("--interactive 与 --auto-approve 不能同时使用")
