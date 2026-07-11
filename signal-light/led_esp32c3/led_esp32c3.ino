@@ -103,6 +103,8 @@ bool restartAfterRename = false;            // 改名成功后，是否需要延
 unsigned long restartAfterRenameAtMs = 0;   // 达到该时间点后执行重启（配合 restartAfterRename）
 
 bool lastButtonState = HIGH;           // 按键上一次读到的电平，LOW->HIGH 的上升沿即视为一次点击的完成
+bool buttonPressSeen = false;          // 本次运行期间是否现场检测到过按下沿，避免把唤醒自己的
+                                        // 那次按压（开机时读到的初始电平已是 LOW）的松开误判为新点击
 
 // 函数前向声明，方便在文件中以任意顺序定义/调用
 void handleCommand(String cmd);
@@ -308,12 +310,19 @@ void loop() {
 // 点击（按下+松开）即关机——松开瞬间触发，不判断按住了多久。这是有意
 // 接受的取舍：换来更简单直接的关机手感，代价是手持/接线时无意碰到并松开
 // 按键也会触发关机。
+// 只有现场检测到过按下沿（buttonPressSeen）之后的松开才算一次点击：开机
+// 时读到的初始电平可能已经是 LOW（GPIO 唤醒时手指还按着），若不加这层判断，
+// 松开这次"唤醒自己的按压"会被误判成新点击，导致刚开机又立刻重新关机。
 // 不判断当前 lightOn/模式，也不受 BLE 的 OFF/CLOSE/IDLE 命令影响，按键始终
 // 是"真关机"，与软熄灯命令相互独立。
 void checkButton() {
   bool buttonState = digitalRead(BUTTON_PIN);
 
-  if (lastButtonState == LOW && buttonState == HIGH) {
+  if (lastButtonState == HIGH && buttonState == LOW) {
+    buttonPressSeen = true;
+  }
+
+  if (lastButtonState == LOW && buttonState == HIGH && buttonPressSeen) {
     enterDeepSleep();
   }
 
