@@ -36,7 +36,7 @@ const String BLE_NAME_PREFIX = "wg-plus-1";
 // -----------------------------------------------------------------------------
 // 固件版本 (Firmware Version) — bump manually before compiling a new build
 // -----------------------------------------------------------------------------
-const String FIRMWARE_VERSION = "1.1.0";
+const String FIRMWARE_VERSION = "1.2.0";
 #define INFO_CHARACTERISTIC_UUID "77697364-6f6d-6761-7264-656e00000005"
 
 #endif // CONFIG_H
