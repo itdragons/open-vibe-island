@@ -43,7 +43,6 @@ const unsigned long OTA_RESTART_DELAY_MS = 3000;      // OTA 成功后延迟重�
 const unsigned long RENAME_RESTART_DELAY_MS = 3000;   // 改名成功后延迟重启的等待时间
 const unsigned long PIN_TEST_TIMEOUT_MS = 5000;       // 接线测试单次点亮的超时时间
 const unsigned long BLE_RECONNECT_DELAY_MS = 100;     // 客户端断开后、重新开启广播前的延迟
-const unsigned long BUTTON_HOLD_MS = 800;             // 按键需持续按住这么久才触发关机，短暂/意外触碰不会误关机
 
 int brightnessPercent = 100; // 0-100，通过 BRIGHTNESS 命令调节；App 重连后会重新同步
 
@@ -103,9 +102,7 @@ unsigned long restartAtMs = 0;                // 达到该时间点后执行重�
 bool restartAfterRename = false;            // 改名成功后，是否需要延迟重启
 unsigned long restartAfterRenameAtMs = 0;   // 达到该时间点后执行重启（配合 restartAfterRename）
 
-bool lastButtonState = HIGH;           // 按键上一次读到的电平，HIGH->LOW 的下降沿即视为一次按压的开始
-unsigned long buttonPressStartMs = 0;  // 本次按压开始的时间戳，配合 BUTTON_HOLD_MS 判断是否达到长按阈值
-bool buttonHoldTriggered = false;      // 本次按压是否已触发过关机，避免持续按住时重复触发
+bool lastButtonState = HIGH;           // 按键上一次读到的电平，LOW->HIGH 的上升沿即视为一次点击的完成
 
 // 函数前向声明，方便在文件中以任意顺序定义/调用
 void handleCommand(String cmd);
@@ -308,23 +305,15 @@ void loop() {
   updateLights();
 }
 
-// 检测按键是否被持续按住超过 BUTTON_HOLD_MS 才触发关机——不是简单的下降沿
-// 立即触发。校准/接线等手持操作时短暂碰到引脚很常见，长按阈值可以过滤掉
-// 这类瞬间误触，只有真正按住不放才会关机。
+// 点击（按下+松开）即关机——松开瞬间触发，不判断按住了多久。这是有意
+// 接受的取舍：换来更简单直接的关机手感，代价是手持/接线时无意碰到并松开
+// 按键也会触发关机。
 // 不判断当前 lightOn/模式，也不受 BLE 的 OFF/CLOSE/IDLE 命令影响，按键始终
 // 是"真关机"，与软熄灯命令相互独立。
 void checkButton() {
   bool buttonState = digitalRead(BUTTON_PIN);
 
-  if (lastButtonState == HIGH && buttonState == LOW) {
-    // 重新计时，让每次按下都独立判断是否达到长按阈值
-    buttonPressStartMs = millis();
-    buttonHoldTriggered = false;
-  }
-
-  if (buttonState == LOW && !buttonHoldTriggered &&
-      millis() - buttonPressStartMs >= BUTTON_HOLD_MS) {
-    buttonHoldTriggered = true;
+  if (lastButtonState == LOW && buttonState == HIGH) {
     enterDeepSleep();
   }
 
