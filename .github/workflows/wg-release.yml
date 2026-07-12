@@ -37,6 +37,12 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          # Single source of truth for the Sparkle zip: the local filename (with spaces)
+          # and the appcast enclosure URL (GitHub swaps spaces for periods) are both
+          # derived from one name, so they can never drift apart.
+          zip_name="WG Open Island-${version}.zip"
+          echo "zip_name=$zip_name" >> "$GITHUB_OUTPUT"
+          echo "zip_url=https://github.com/itdragons/open-vibe-island/releases/download/${tag}/${zip_name// /.}" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: |
@@ -52,14 +58,16 @@ jobs:
           OPEN_ISLAND_UNIVERSAL: "true"
           OPEN_ISLAND_SPARKLE_FEED_URL: "https://raw.githubusercontent.com/itdragons/open-vibe-island/wg/appcast-wg.xml"
           OPEN_ISLAND_EDDSA_PUBLIC_KEY: ${{ vars.WG_SPARKLE_PUBLIC_KEY }}
-          # DMG filename carries the version (user-facing download only).
-          # ZIP keeps the fixed name — it is the Sparkle enclosure and the appcast URL is hardcoded.
+          # DMG and ZIP filenames both carry the version. The zip is the Sparkle
+          # enclosure; its appcast URL is derived from this same name (version step's
+          # zip_url output), so filename and URL stay in lockstep.
           OPEN_ISLAND_DMG_PATH: "${{ github.workspace }}/output/package/WG Open Island-${{ steps.version.outputs.version }}.dmg"
+          OPEN_ISLAND_ZIP_PATH: "${{ github.workspace }}/output/package/${{ steps.version.outputs.zip_name }}"
         run: zsh scripts/package-app.sh
 
       - name: Verify artifacts
         run: |
-          test -f "output/package/WG Open Island.zip"
+          test -f "output/package/${{ steps.version.outputs.zip_name }}"
           test -f "output/package/WG Open Island-${{ steps.version.outputs.version }}.dmg"
           ls -lh output/package/
 
@@ -92,7 +100,7 @@ jobs:
           SPARKLE_EDDSA_KEY: ${{ secrets.WG_SPARKLE_EDDSA_KEY }}
         run: |
           sign_tool=".build/artifacts/sparkle/Sparkle/bin/sign_update"
-          zip_path="output/package/WG Open Island.zip"
+          zip_path="output/package/${{ steps.version.outputs.zip_name }}"
 
           if [[ -z "$SPARKLE_EDDSA_KEY" ]]; then
             echo "::warning::SPARKLE_EDDSA_KEY not set — skipping appcast update"
@@ -125,7 +133,7 @@ jobs:
             --draft \
             --notes "Unsigned/ad-hoc-signed build. Right-click → Open on first launch to bypass Gatekeeper. Please publish this draft promptly — the WG appcast will point at these assets once committed, and in-app \"Check for Updates\" will 404 until this release is published." \
             "output/package/WG Open Island-${{ steps.version.outputs.version }}.dmg#WG Open Island-${{ steps.version.outputs.version }}.dmg (macOS, Universal)" \
-            "output/package/WG Open Island.zip#WG Open Island.zip (macOS, Universal)"
+            "output/package/${{ steps.version.outputs.zip_name }}#${{ steps.version.outputs.zip_name }} (macOS, Universal)"
 
       - name: Update appcast-wg.xml on wg
         if: steps.sparkle_sign.outputs.signed == 'true'
@@ -139,7 +147,8 @@ jobs:
             "${{ steps.version.outputs.version }}" \
             "${{ github.run_number }}" \
             "${{ steps.sparkle_sign.outputs.ed_signature }}" \
-            "${{ steps.sparkle_sign.outputs.length }}"
+            "${{ steps.sparkle_sign.outputs.length }}" \
+            "${{ steps.version.outputs.zip_url }}"
           git add appcast-wg.xml
           git commit -m "chore: update appcast-wg.xml for ${{ steps.version.outputs.tag }}"
           git push origin wg
