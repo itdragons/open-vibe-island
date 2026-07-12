@@ -81,7 +81,7 @@ enum SettingsSection: String, CaseIterable {
         switch self {
         case .system:   lang.t("settings.section.system")
         case .advanced: lang.t("settings.section.advanced")
-        case .app:      "Open Island"
+        case .app:      "WG Open Island"
         }
     }
 
