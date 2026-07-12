@@ -7,9 +7,9 @@
 // 引脚配置 (Pin Configuration) — 出厂默认值，实际生效值存在 NVS 里，
 // 可通过 SETPIN 命令按设备修正错误焊接，无需重新烧录固件。
 // -----------------------------------------------------------------------------
-const int DEFAULT_LED_GREEN = 10;
-const int DEFAULT_LED_RED = 7;
-const int DEFAULT_LED_YELLOW = 6;
+const int DEFAULT_LED_GREEN = 6;
+const int DEFAULT_LED_YELLOW = 7;
+const int DEFAULT_LED_RED = 10;
 
 // 物理开关机按键引脚（无自锁开关，接 GND，内部上拉）。固定接线，不经 NVS
 // 重新分配；旧硬件上该引脚悬空未接，不影响其正常运行。
