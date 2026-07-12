@@ -7,6 +7,19 @@
         <language>en</language>
         <!-- Items are added by .github/workflows/wg-release.yml via scripts/update-appcast-wg.sh -->
         <item>
+            <title>Version 1.0.3</title>
+            <sparkle:version>11</sparkle:version>
+            <sparkle:shortVersionString>1.0.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Sun, 12 Jul 2026 18:06:29 +0000</pubDate>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.3/WG.Open.Island-1.0.3.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="pdBSIIkO7rnARFikFP72WEuGVyv7ykDw+xs9ZVqshP+U+5nW0C7elPoBGJ03flmijFKJYK65zaqtRn0lPwbAAg=="
+                length="12611486"
+            />
+        </item>
+        <item>
             <title>Version 1.0.2</title>
             <sparkle:version>10</sparkle:version>
             <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
