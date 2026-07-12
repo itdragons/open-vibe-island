@@ -8,15 +8,15 @@
         <!-- Items are added by .github/workflows/wg-release.yml via scripts/update-appcast-wg.sh -->
         <item>
             <title>Version 1.0.1</title>
-            <sparkle:version>4</sparkle:version>
+            <sparkle:version>5</sparkle:version>
             <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <pubDate>Sun, 12 Jul 2026 15:30:23 +0000</pubDate>
+            <pubDate>Sun, 12 Jul 2026 15:38:05 +0000</pubDate>
             <enclosure
                 url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.1/WG.Open.Island.zip"
                 type="application/octet-stream"
-                sparkle:edSignature="iSV9HT1+h0EBoyflpVj/y4EZ3VcxJ2ho3HhsneeBLZR3t3EwyIMLoEwUqw1BJnzmBDcqWOW+/+k1JS8dZTUqBg=="
-                length="12586719"
+                sparkle:edSignature="H1HXAEhIJ18gc0JR48yIvkyyhcsQ65rXycdBZHqOPtt1nhkxo4MOBXazfexYpDZT35iUNocz6KMMpdjTpiJaBQ=="
+                length="12586721"
             />
         </item>
     </channel>
