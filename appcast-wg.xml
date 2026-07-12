@@ -7,16 +7,16 @@
         <language>en</language>
         <!-- Items are added by .github/workflows/wg-release.yml via scripts/update-appcast-wg.sh -->
         <item>
-            <title>Version 1.0.0</title>
-            <sparkle:version>1</sparkle:version>
-            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+            <title>Version 1.0.1</title>
+            <sparkle:version>2</sparkle:version>
+            <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <pubDate>Sun, 12 Jul 2026 04:52:21 +0000</pubDate>
+            <pubDate>Sun, 12 Jul 2026 05:15:20 +0000</pubDate>
             <enclosure
-                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.0/WG.Open.Island.zip"
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.1/WG.Open.Island.zip"
                 type="application/octet-stream"
-                sparkle:edSignature="SKOLEtVUEk2Fy8L0WamKWMqt5/eH5MMck4YCIvNEbknqEPGJS87UgIeDmpr2APRB4fzSxAHBcz5MlfuqpA5aAw=="
-                length="12586714"
+                sparkle:edSignature="9I3Qj2VCn5duWoglChcQ6Zke6Nrd1nKZk17U2i5WN+6MspBUVxJryepqfoFu1DrNMEet5q0TBy1WPqQ/45C4Dg=="
+                length="12586720"
             />
         </item>
     </channel>
