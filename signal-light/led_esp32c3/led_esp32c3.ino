@@ -5,6 +5,7 @@
 #include <Update.h>
 #include <Preferences.h>
 #include <esp_sleep.h>
+#include <esp_system.h>
 #include "config.h"
 
 
@@ -131,6 +132,9 @@ int currentOnValue();
 int scaleToOnValue(int rawValue, int onValue);
 void checkButton();
 void enterDeepSleep();
+void sleepWithGpioWakeup();
+void blinkLowPowerWarning();
+void enterSafeBootSleep();
 
 // 客户端断开连接后：立即切换到"未连接"三色呼吸提示态（无条件覆盖灯开关
 // 与上一个模式——断开时 App 已无法控制灯光，呼吸提示比停留在旧状态更有用），
@@ -177,6 +181,18 @@ void setup() {
   Serial.println("C3 LED starting...");
   Serial.println("Wakeup cause: " + String(esp_sleep_get_wakeup_cause()));
 
+  // 判断本次复位是否异常（brownout/看门狗/panic）。异常复位说明上一次运行中途被硬件强制
+  // 打断，很可能是电池电压走低导致 BLE 电流冲击触发欠压复位——如果照常重新初始化 BLE，
+  // 大概率立刻再次触发同样的复位，形成"复位→频闪→复位"的死循环。正常上电、按键唤醒
+  // （ESP_RST_DEEPSLEEP）、OTA/改名后固件自己发起的重启（ESP_RST_SW）都不算异常。
+  esp_reset_reason_t resetReason = esp_reset_reason();
+  bool isAbnormalReset = resetReason == ESP_RST_BROWNOUT ||
+                          resetReason == ESP_RST_PANIC ||
+                          resetReason == ESP_RST_INT_WDT ||
+                          resetReason == ESP_RST_TASK_WDT ||
+                          resetReason == ESP_RST_WDT;
+  Serial.println("Reset reason: " + String(resetReason) + (isAbnormalReset ? " (abnormal -> safe boot)" : " (normal)"));
+
   // 从 NVS 读取持久化的引脚分配与蓝牙名称；全新芯片没有记录时用 config.h 默认值
   prefs.begin("wglight", false);
   led_red = prefs.getInt("pinRed", DEFAULT_LED_RED);
@@ -212,6 +228,12 @@ void setup() {
   // showManualLights() 是因为它固定用 LED_ON（100% 亮度）点亮，会在
   // MODE_DISCONNECTED 接管前的这一瞬间无视用户设置的亮度，闪一下满亮
   turnOffLights();
+
+  // 安全降级：跳过 BLE 初始化（最大的电流冲击源），闪一个专属警告色后直接深度睡眠，
+  // 交给用户按键决定何时重试。enterSafeBootSleep() 内部会进入深度睡眠，不会返回。
+  if (isAbnormalReset) {
+    enterSafeBootSleep();
+  }
 
   // 初始化 BLE 协议栈，并调大 MTU 以提升 OTA 数据传输效率
   BLEDevice::init(bleName.c_str());
@@ -341,6 +363,13 @@ void enterDeepSleep() {
 
   turnOffLights();
 
+  sleepWithGpioWakeup();
+}
+
+// 等按键释放后使能 GPIO 唤醒并进入深度睡眠。抽成共享函数供 enterDeepSleep() 与
+// enterSafeBootSleep() 复用，避免"忘记等按键释放"这类保护逻辑在两处各写一份、日后改动时漂移。
+// 不会返回：调用后芯片进入深度睡眠，下一次执行从 setup() 重新开始。
+void sleepWithGpioWakeup() {
   while (digitalRead(BUTTON_PIN) == LOW) {
     delay(10);
   }
@@ -348,6 +377,31 @@ void enterDeepSleep() {
 
   esp_deep_sleep_enable_gpio_wakeup(1ULL << BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
   esp_deep_sleep_start();
+}
+
+// 异常复位警告：三色 LED 同时闪烁，与现有任何模式的视觉效果都不同，用于提示"疑似低电/
+// 故障，已跳过本次启动"。此时 BLE 尚未初始化，不经过 updateLights()/currentMode 渲染机制。
+void blinkLowPowerWarning() {
+  const int blinkCount = 5;
+  const unsigned long blinkIntervalMs = 150;
+
+  for (int i = 0; i < blinkCount; i++) {
+    setLights(LED_ON, LED_ON, LED_ON);
+    delay(blinkIntervalMs);
+    setLights(LED_OFF, LED_OFF, LED_OFF);
+    delay(blinkIntervalMs);
+  }
+}
+
+// 检测到异常复位（brownout/看门狗/panic）时的安全降级入口：闪警告后直接深度睡眠，
+// 不初始化 BLE，避免再次触发同样的电流冲击型复位。不会返回。
+void enterSafeBootSleep() {
+  Serial.println(">>> 安全降级：跳过 BLE 初始化，闪烁警告后进入深度睡眠");
+  Serial.flush();
+
+  blinkLowPowerWarning();
+
+  sleepWithGpioWakeup();
 }
 
 // 底层输出：直接写三路 PWM（反相逻辑，数值越小越亮）
