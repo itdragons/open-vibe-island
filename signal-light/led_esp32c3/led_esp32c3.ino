@@ -6,6 +6,8 @@
 #include <Preferences.h>
 #include <esp_sleep.h>
 #include <esp_system.h>
+#include "driver/ledc.h"
+#include "driver/gpio.h"
 #include "config.h"
 
 
@@ -32,6 +34,20 @@ const int LED_DIM = 128; // 半亮
 const int LED_OFF = 255; // 255 是全灭（高电平）
 const int PWM_MIN = 0; // PWM 取值下限
 const int PWM_MAX = 255; // PWM 取值上限
+
+// LED 用底层 IDF LEDC 驱动并开启输出反相（output_invert）。LEDC 通道配置那一刻占空比
+// 默认为 0，反相接线下 0=全亮；开启反相后 0=灭，通道从接管起就是灭的，消除开机满亮闪。
+// 反相使占空比语义翻转，故写入 duty = PWM_MAX - value（value 约定 0=亮、255=灭）。
+const int LED_PWM_FREQUENCY = 25000;
+const ledc_mode_t LED_PWM_MODE = LEDC_LOW_SPEED_MODE;       // ESP32-C3 只有低速模式
+const ledc_timer_t LED_PWM_TIMER = LEDC_TIMER_0;
+const ledc_timer_bit_t LED_PWM_RESOLUTION = LEDC_TIMER_8_BIT; // 占空比 0-255
+
+// 三路 LED 各占一个固定 LEDC 通道；SETPIN 改引脚时只改该通道绑定的 GPIO，通道号不变。
+// PINTEST 走纯数字 GPIO，不占用 LEDC 通道（见 handlePinTestCommand）。
+const ledc_channel_t LED_CHANNEL_RED = LEDC_CHANNEL_0;
+const ledc_channel_t LED_CHANNEL_YELLOW = LEDC_CHANNEL_1;
+const ledc_channel_t LED_CHANNEL_GREEN = LEDC_CHANNEL_2;
 
 // 时间相关常量（单位：毫秒）—— 动画节奏与重启/超时延迟。
 const unsigned long GREEN_BLINK_INTERVAL_MS = 600;    // GREEN_BLINK 模式绿灯闪烁间隔
@@ -141,6 +157,10 @@ void enterDeepSleep();
 void sleepWithGpioWakeup();
 void blinkLowPowerWarning();
 void enterSafeBootSleep();
+void configureLedChannel(int pin, ledc_channel_t channel);
+void configureAllLedChannels();
+void writeLedChannel(ledc_channel_t channel, int value);
+void driveTestPin(int pin, bool on);
 
 // 客户端断开连接后：立即切换到"未连接"三色呼吸提示态（无条件覆盖灯开关
 // 与上一个模式——断开时 App 已无法控制灯光，呼吸提示比停留在旧状态更有用），
@@ -198,9 +218,9 @@ void setup() {
                           resetReason == ESP_RST_TASK_WDT ||
                           resetReason == ESP_RST_WDT;
 
-  // 单次读数不足以确认是真的复位循环（烧录固件触发的复位序列，在个别板子上也可能被判定
-  // 成上面这些"异常"原因之一）。用连续计数debounce：只有连续多次都是异常复位才判定为
-  // 真循环；只要出现一次正常复位就清零，避免误伤一次性的烧录后启动/偶发复位。
+  // 单次读数不足以确认是真的复位循环（烧录固件触发的复位序列在个别板子上也可能被判为
+  // 异常）。用连续计数去抖：连续多次异常才判定为真循环，出现一次正常复位就清零，避免
+  // 误伤一次性的烧录后启动/偶发复位。
   abnormalResetStreak = isAbnormalReset ? abnormalResetStreak + 1 : 0;
   bool shouldSafeBoot = abnormalResetStreak >= ABNORMAL_RESET_STREAK_THRESHOLD;
   Serial.println("Reset reason: " + String(resetReason) +
@@ -224,24 +244,22 @@ void setup() {
   Serial.println("Pins -> R:" + String(led_red) + " Y:" + String(led_yellow) + " G:" + String(led_green));
   Serial.println("BLE name -> " + bleName);
 
-  // 将三路 LED 引脚初始化为输出模式。先写入熄灭电平（HIGH，反相逻辑下=灭）
-  // 再切换成 OUTPUT：pinMode(OUTPUT) 生效那一刻引脚默认电平是低电平，反相
-  // 逻辑下低电平=点亮，先把电平写好可以避免这一瞬间被误点亮。
-  digitalWrite(led_green, HIGH);
+  // 先用数字高电平把三路引脚摁灭，覆盖 configureAllLedChannels 接管前的窗口。
+  // 顺序关键：先 pinMode(OUTPUT) 再 digitalWrite(HIGH)；反过来时引脚仍是 INPUT，
+  // pinMode(OUTPUT) 生效瞬间会输出默认低电平（反相=满亮），造成开机满亮闪。
   pinMode(led_green, OUTPUT);
-  digitalWrite(led_red, HIGH);
+  digitalWrite(led_green, HIGH);
   pinMode(led_red, OUTPUT);
-  digitalWrite(led_yellow, HIGH);
+  digitalWrite(led_red, HIGH);
   pinMode(led_yellow, OUTPUT);
+  digitalWrite(led_yellow, HIGH);
+
+  // 配置 LEDC 定时器与三路输出反相通道（占空比 0=灭），接管三路引脚
+  configureAllLedChannels();
 
   // 无自锁开关，接 GND，内部上拉；旧硬件该引脚悬空，稳定读 HIGH，不会误触发
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   lastButtonState = digitalRead(BUTTON_PIN);
-
-  // 再用 PWM 方式确认一次熄灭状态，交给后续的 analogWrite 接管；不用
-  // showManualLights() 是因为它固定用 LED_ON（100% 亮度）点亮，会在
-  // MODE_DISCONNECTED 接管前的这一瞬间无视用户设置的亮度，闪一下满亮
-  turnOffLights();
 
   // 安全降级：跳过 BLE 初始化（最大的电流冲击源），闪一个专属警告色后直接深度睡眠，
   // 交给用户按键决定何时重试。enterSafeBootSleep() 内部会进入深度睡眠，不会返回。
@@ -380,9 +398,8 @@ void enterDeepSleep() {
   sleepWithGpioWakeup();
 }
 
-// 等按键释放后使能 GPIO 唤醒并进入深度睡眠。抽成共享函数供 enterDeepSleep() 与
-// enterSafeBootSleep() 复用，避免"忘记等按键释放"这类保护逻辑在两处各写一份、日后改动时漂移。
-// 不会返回：调用后芯片进入深度睡眠，下一次执行从 setup() 重新开始。
+// 等按键释放后使能 GPIO 唤醒并进入深度睡眠，供 enterDeepSleep 与 enterSafeBootSleep 复用。
+// 不会返回：调用后芯片进入深度睡眠，下次从 setup() 重新开始。
 void sleepWithGpioWakeup() {
   while (digitalRead(BUTTON_PIN) == LOW) {
     delay(10);
@@ -393,9 +410,8 @@ void sleepWithGpioWakeup() {
   esp_deep_sleep_start();
 }
 
-// 异常复位警告：三色 LED 同时闪烁，与现有任何模式的视觉效果都不同，用于提示"疑似低电/
-// 故障，已跳过本次启动"。此时 BLE 尚未初始化，不经过 updateLights()/currentMode 渲染机制，
-// 但仍用 currentOnValue() 而非 LED_ON，避免在用户调低过亮度后这里突然满亮刺眼。
+// 异常复位警告：三色 LED 同闪，区别于任何常规模式，提示"疑似低电/故障，已跳过本次启动"。
+// 用 currentOnValue() 而非 LED_ON，避免用户调低过亮度后这里突然满亮刺眼。
 void blinkLowPowerWarning() {
   const int blinkCount = 5;
   const unsigned long blinkIntervalMs = 150;
@@ -420,11 +436,48 @@ void enterSafeBootSleep() {
   sleepWithGpioWakeup();
 }
 
-// 底层输出：直接写三路 PWM（反相逻辑，数值越小越亮）
+// 把一路 LED 引脚绑定到指定 LEDC 通道并开启输出反相，初始占空比 0（反相后=灭）。
+// 开机与 SETPIN 改引脚都用它。
+void configureLedChannel(int pin, ledc_channel_t channel) {
+  ledc_channel_config_t channelConfig = {};
+  channelConfig.gpio_num = pin;
+  channelConfig.speed_mode = LED_PWM_MODE;
+  channelConfig.channel = channel;
+  channelConfig.timer_sel = LED_PWM_TIMER;
+  channelConfig.duty = 0;                 // 反相后 = 高电平 = 灭
+  channelConfig.hpoint = 0;
+  channelConfig.flags.output_invert = 1;
+  ledc_channel_config(&channelConfig);
+}
+
+// 配置 LEDC 定时器并把三路 LED 各绑定到自己的反相通道。开机、以及 PINTEST 结束后
+// 恢复渲染前都调用，保证三个颜色通道都指向当前（可能被 SETPIN/PINTEST 改过的）引脚。
+void configureAllLedChannels() {
+  ledc_timer_config_t timerConfig = {};
+  timerConfig.speed_mode = LED_PWM_MODE;
+  timerConfig.duty_resolution = LED_PWM_RESOLUTION;
+  timerConfig.timer_num = LED_PWM_TIMER;
+  timerConfig.freq_hz = LED_PWM_FREQUENCY;
+  timerConfig.clk_cfg = LEDC_AUTO_CLK;
+  ledc_timer_config(&timerConfig);
+
+  configureLedChannel(led_red, LED_CHANNEL_RED);
+  configureLedChannel(led_yellow, LED_CHANNEL_YELLOW);
+  configureLedChannel(led_green, LED_CHANNEL_GREEN);
+}
+
+// 向一路反相 LEDC 通道写入应用层亮度值（value：0=最亮，255=灭）。反相后 duty = PWM_MAX - value。
+void writeLedChannel(ledc_channel_t channel, int value) {
+  int duty = PWM_MAX - value;
+  ledc_set_duty(LED_PWM_MODE, channel, duty);
+  ledc_update_duty(LED_PWM_MODE, channel);
+}
+
+// 底层输出：把三色值写入各自的反相 LEDC 通道（反相逻辑，数值越小越亮）。
 void setLights(int red, int yellow, int green) {
-  analogWrite(led_red, red);
-  analogWrite(led_yellow, yellow);
-  analogWrite(led_green, green);
+  writeLedChannel(LED_CHANNEL_RED, red);
+  writeLedChannel(LED_CHANNEL_YELLOW, yellow);
+  writeLedChannel(LED_CHANNEL_GREEN, green);
 }
 
 // 按手动模式当前保存的三色数值点亮
@@ -1028,17 +1081,19 @@ void handleSetPinCommand(String cmd) {
     return;
   }
 
-  pinMode(pin, OUTPUT);
-
+  // 更新颜色→引脚映射，并把该颜色对应的反相 LEDC 通道重新绑定到新引脚（占空比 0=灭）。
   if (colorText == "R") {
     led_red = pin;
     prefs.putInt("pinRed", pin);
+    configureLedChannel(pin, LED_CHANNEL_RED);
   } else if (colorText == "Y") {
     led_yellow = pin;
     prefs.putInt("pinYellow", pin);
+    configureLedChannel(pin, LED_CHANNEL_YELLOW);
   } else if (colorText == "G") {
     led_green = pin;
     prefs.putInt("pinGreen", pin);
+    configureLedChannel(pin, LED_CHANNEL_GREEN);
   } else {
     setOtaStatus("SETPIN failed: unknown color " + colorText);
     return;
@@ -1093,13 +1148,20 @@ void handlePinTestCommand(String cmd) {
   } else if (pinTestActivePin != -1 && pinTestActivePin != pin) {
     // 向导过程中切换到另一个候选引脚：先关掉上一个引脚，防止 App
     // 忘记关闭导致它常亮。
-    analogWrite(pinTestActivePin, LED_OFF);
+    driveTestPin(pinTestActivePin, false);
   }
 
-  pinMode(pin, OUTPUT);
-  analogWrite(pin, value == 1 ? LED_ON : LED_OFF);
+  driveTestPin(pin, value == 1);
   pinTestActivePin = pin;
   pinTestDeadlineMs = millis() + PIN_TEST_TIMEOUT_MS;
+}
+
+// PINTEST 用纯数字 GPIO 点灯（不占用 LEDC 通道）：先 gpio_reset_pin 断开该引脚可能存在的
+// LEDC 绑定（被测引脚可能正是某路 LED 的通道引脚），再按反相逻辑写电平（LOW=亮、HIGH=灭）。
+void driveTestPin(int pin, bool on) {
+  gpio_reset_pin((gpio_num_t)pin);
+  pinMode(pin, OUTPUT);
+  digitalWrite(pin, on ? LOW : HIGH);
 }
 
 // PINTEST 序列超时后自动熄灭测试引脚，并恢复进入测试前的模式与灯光开关状态
@@ -1109,9 +1171,13 @@ void endPinTestIfExpired(unsigned long nowMs) {
   }
 
   if (pinTestActivePin != -1) {
-    analogWrite(pinTestActivePin, LED_OFF);
+    driveTestPin(pinTestActivePin, false);
   }
   pinTestActivePin = -1;
+
+  // 恢复三路 LED 的反相通道绑定：测试期间可能用 gpio_reset_pin 断开过某路 LED 引脚
+  configureAllLedChannels();
+
   lightOn = pinTestPriorLightOn;
   currentMode = pinTestPriorMode;
 }
