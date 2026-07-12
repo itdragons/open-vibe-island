@@ -380,13 +380,15 @@ void sleepWithGpioWakeup() {
 }
 
 // 异常复位警告：三色 LED 同时闪烁，与现有任何模式的视觉效果都不同，用于提示"疑似低电/
-// 故障，已跳过本次启动"。此时 BLE 尚未初始化，不经过 updateLights()/currentMode 渲染机制。
+// 故障，已跳过本次启动"。此时 BLE 尚未初始化，不经过 updateLights()/currentMode 渲染机制，
+// 但仍用 currentOnValue() 而非 LED_ON，避免在用户调低过亮度后这里突然满亮刺眼。
 void blinkLowPowerWarning() {
   const int blinkCount = 5;
   const unsigned long blinkIntervalMs = 150;
+  int onValue = currentOnValue();
 
   for (int i = 0; i < blinkCount; i++) {
-    setLights(LED_ON, LED_ON, LED_ON);
+    setLights(onValue, onValue, onValue);
     delay(blinkIntervalMs);
     setLights(LED_OFF, LED_OFF, LED_OFF);
     delay(blinkIntervalMs);
