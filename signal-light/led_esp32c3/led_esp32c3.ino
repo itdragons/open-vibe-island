@@ -107,6 +107,12 @@ bool lastButtonState = HIGH;           // 按键上一次读到的电平，LOW->
 bool buttonPressSeen = false;          // 本次运行期间是否现场检测到过按下沿，避免把唤醒自己的
                                         // 那次按压（开机时读到的初始电平已是 LOW）的松开误判为新点击
 
+// 连续异常复位计数：RTC_DATA_ATTR 变量在深睡眠/看门狗/brownout 等复位间保留，只在真正
+// 断电冷启动时清零。烧录固件本身触发的复位序列在个别板子上也可能被判定成"异常"，单次
+// 读数不足为凭——只有连续达到阈值才说明是真的复位循环，避免误伤一次性的烧录后启动。
+RTC_DATA_ATTR int abnormalResetStreak = 0;
+const int ABNORMAL_RESET_STREAK_THRESHOLD = 3;
+
 // 函数前向声明，方便在文件中以任意顺序定义/调用
 void handleCommand(String cmd);
 bool handleModeCommand(String cmd);
@@ -191,7 +197,15 @@ void setup() {
                           resetReason == ESP_RST_INT_WDT ||
                           resetReason == ESP_RST_TASK_WDT ||
                           resetReason == ESP_RST_WDT;
-  Serial.println("Reset reason: " + String(resetReason) + (isAbnormalReset ? " (abnormal -> safe boot)" : " (normal)"));
+
+  // 单次读数不足以确认是真的复位循环（烧录固件触发的复位序列，在个别板子上也可能被判定
+  // 成上面这些"异常"原因之一）。用连续计数debounce：只有连续多次都是异常复位才判定为
+  // 真循环；只要出现一次正常复位就清零，避免误伤一次性的烧录后启动/偶发复位。
+  abnormalResetStreak = isAbnormalReset ? abnormalResetStreak + 1 : 0;
+  bool shouldSafeBoot = abnormalResetStreak >= ABNORMAL_RESET_STREAK_THRESHOLD;
+  Serial.println("Reset reason: " + String(resetReason) +
+                  ", abnormal streak: " + String(abnormalResetStreak) +
+                  (shouldSafeBoot ? " -> safe boot" : ""));
 
   // 从 NVS 读取持久化的引脚分配与蓝牙名称；全新芯片没有记录时用 config.h 默认值
   prefs.begin("wglight", false);
@@ -231,7 +245,7 @@ void setup() {
 
   // 安全降级：跳过 BLE 初始化（最大的电流冲击源），闪一个专属警告色后直接深度睡眠，
   // 交给用户按键决定何时重试。enterSafeBootSleep() 内部会进入深度睡眠，不会返回。
-  if (isAbnormalReset) {
+  if (shouldSafeBoot) {
     enterSafeBootSleep();
   }
 
