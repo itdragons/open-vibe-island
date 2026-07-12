@@ -1,0 +1,124 @@
+name: WG Release
+
+on:
+  push:
+    tags:
+      - 'wg-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 1.2.1-dev1 (tag will be wg-v<version>)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version and tag
+        id: version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ github.event.inputs.version }}"
+            tag="wg-v${version}"
+            git tag "$tag"
+            git push origin "$tag"
+          else
+            tag="${GITHUB_REF_NAME}"
+            version="${tag#wg-v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: |
+          brew install create-dmg
+          pip3 install --break-system-packages Pillow
+
+      - name: Build and package (ad-hoc signed)
+        env:
+          OPEN_ISLAND_APP_NAME: "WG Open Island"
+          OPEN_ISLAND_BUNDLE_ID: "app.openisland.wg"
+          OPEN_ISLAND_VERSION: ${{ steps.version.outputs.version }}
+          OPEN_ISLAND_BUILD_NUMBER: ${{ github.run_number }}
+          OPEN_ISLAND_UNIVERSAL: "true"
+          OPEN_ISLAND_SPARKLE_FEED_URL: "https://raw.githubusercontent.com/itdragons/open-vibe-island/wg/appcast-wg.xml"
+          OPEN_ISLAND_EDDSA_PUBLIC_KEY: ${{ vars.WG_SPARKLE_PUBLIC_KEY }}
+        run: zsh scripts/package-app.sh
+
+      - name: Verify artifacts
+        run: |
+          test -f "output/package/WG Open Island.zip"
+          test -f "output/package/WG Open Island.dmg"
+          ls -lh output/package/
+
+      - name: Verify ad-hoc code signature
+        run: |
+          bundle="output/package/WG Open Island.app"
+          codesign -dvv "$bundle"
+          codesign --verify --deep --strict --verbose=2 "$bundle"
+
+      - name: Verify bundle structure
+        run: |
+          bundle="output/package/WG Open Island.app"
+          for f in \
+            "Contents/MacOS/OpenIslandApp" \
+            "Contents/Helpers/OpenIslandHooks" \
+            "Contents/Helpers/OpenIslandSetup" \
+            "Contents/Resources/OpenIsland.icns" \
+            "Contents/Resources/OpenIsland_OpenIslandApp.bundle" \
+          ; do
+            if [[ ! -e "$bundle/$f" ]]; then
+              echo "::error::Missing required file: $f"
+              exit 1
+            fi
+          done
+          echo "Bundle structure OK"
+
+      - name: Sign update with EdDSA (Sparkle)
+        id: sparkle_sign
+        env:
+          SPARKLE_EDDSA_KEY: ${{ secrets.WG_SPARKLE_EDDSA_KEY }}
+        run: |
+          sign_tool=".build/artifacts/sparkle/Sparkle/bin/sign_update"
+          zip_path="output/package/WG Open Island.zip"
+          sign_output="$(echo "$SPARKLE_EDDSA_KEY" | "$sign_tool" "$zip_path" --ed-key-file -)"
+          ed_signature="$(echo "$sign_output" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
+          length="$(echo "$sign_output" | sed -n 's/.*length="\([^"]*\)".*/\1/p')"
+          echo "ed_signature=$ed_signature" >> "$GITHUB_OUTPUT"
+          echo "length=$length" >> "$GITHUB_OUTPUT"
+
+      - name: Update appcast-wg.xml on wg
+        run: |
+          cp appcast-wg.xml /tmp/appcast-wg.xml
+          git fetch origin wg
+          git checkout wg
+          git pull --ff-only origin wg
+          cp /tmp/appcast-wg.xml appcast-wg.xml
+          zsh scripts/update-appcast-wg.sh \
+            "${{ steps.version.outputs.version }}" \
+            "${{ github.run_number }}" \
+            "${{ steps.sparkle_sign.outputs.ed_signature }}" \
+            "${{ steps.sparkle_sign.outputs.length }}"
+          git add appcast-wg.xml
+          git commit -m "chore: update appcast-wg.xml for ${{ steps.version.outputs.tag }}"
+          git push origin wg
+
+      - name: Create GitHub Release (draft)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "WG Open Island ${{ steps.version.outputs.tag }}" \
+            --draft \
+            --notes "Unsigned/ad-hoc-signed build. Right-click → Open on first launch to bypass Gatekeeper." \
+            "output/package/WG Open Island.dmg#WG Open Island.dmg (macOS, Universal)" \
+            "output/package/WG Open Island.zip#WG Open Island.zip (macOS, Universal)"
