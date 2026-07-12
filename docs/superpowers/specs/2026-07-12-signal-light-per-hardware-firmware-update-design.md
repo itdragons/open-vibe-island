@@ -34,7 +34,7 @@ signal-light/esp32c3/                 ← 每种硬件自成一体
   ├─ config.h
   └─ firmware/                        ← 已发布、可下载的版本化产物
        ├─ version.json                ← manifest
-       └─ esp32c3_v1_2_1.bin          ← 按版本命名 → 不可变 URL
+       └─ esp32c3-1.2.1.bin           ← 按版本命名 → 不可变 URL
 ```
 
 约定:
@@ -42,6 +42,11 @@ signal-light/esp32c3/                 ← 每种硬件自成一体
 - 按**硬件 ID** 平铺 `signal-light/{hardwareID}/`,将来加 `esp32s3/` 等直接并列。
 - 每种硬件目录下的 `firmware/` 存放发布产物;`{hardwareID}` 即设备上报的 ID,App
   路径零特判地拼出。
+- **bin 命名约定**:`{hardwareID}-{version}.bin`,版本段与 semver 完全一致
+  (点分、无 `v` 前缀),如 `esp32c3-1.2.1.bin`。与 `FIRMWARE_VERSION` / manifest
+  `version` 同写法,人和脚本无需在 `1.2.1` 与 `v1_2_1` 之间转换。目录中旧命名的
+  `esp32c3_v1_2_0.bin` / `esp32c3_v1_2_1.bin` 一并按新约定处理(重编译产物用新名,
+  旧名文件在无引用后删除)。
 - **删除可变的 `signal-light.bin`**:manifest 的 `binary` 字段是要下载文件的唯一真相源。
   可变文件名正是当前代码注释记录的 jsDelivr 12h 边缘缓存陈旧的根源;按版本命名的
   bin 是不可变 URL,天然绕开该问题。
@@ -119,7 +124,7 @@ public struct SignalLightDeviceInfo: Codable, Sendable {
 {
   "hardware": "esp32c3",
   "version": "1.2.1",
-  "binary": "esp32c3_v1_2_1.bin",
+  "binary": "esp32c3-1.2.1.bin",
   "notes": "…",
   "history": ["…"]
 }
@@ -146,8 +151,8 @@ public struct SignalLightDeviceInfo: Codable, Sendable {
 
 **前提(实现时必做)**:现有 `esp32c3_v1_2_1.bin` 来源无法证明就是当前
 `esp32c3.ino` 编译产物。故在 `FIRMWARE_VERSION` 改为 `1.2.1` 后**从当前源码重新
-编译**,生成新的 `esp32c3_v1_2_1.bin`,确保「源码 = 版本号 = 二进制」可证一致,
-不信任来历不明的旧 bin。
+编译**,生成新命名的 `esp32c3-1.2.1.bin`,确保「源码 = 版本号 = 二进制」可证
+一致,不信任来历不明的旧 bin。
 
 ### 6. 调用点
 
