@@ -111,6 +111,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Remove any pre-existing release for this tag (e.g. from a re-run) so
+          # the draft is recreated cleanly. Keep the tag itself — it drives the run.
+          gh release delete "${{ steps.version.outputs.tag }}" --yes 2>/dev/null || true
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "WG Open Island v${{ steps.version.outputs.version }}" \
             --draft \
