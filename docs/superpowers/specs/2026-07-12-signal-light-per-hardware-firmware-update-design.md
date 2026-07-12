@@ -56,6 +56,7 @@ signal-light/esp32c3/                 ← 每种硬件自成一体
   ```cpp
   const String HARDWARE_ID = "esp32c3";
   ```
+- 同时将 `FIRMWARE_VERSION` 由 `"1.2.0"` bump 到 `"1.2.1"`(见「版本决策」)。
 
 **`signal-light/esp32c3/esp32c3.ino`**(setup 中设置 INFO 特征值处,约 313 行)
 
@@ -126,9 +127,27 @@ public struct SignalLightDeviceInfo: Codable, Sendable {
 
 - 新增 `binary`:App 要下载的文件名(App 端必需依据,缺失才回退)。
 - 新增 `hardware`:自描述用,App 不强制校验(路径已隐含硬件)。
-- **版本一致性(实现时对齐)**:`FIRMWARE_VERSION`(config.h)、manifest `version`、
-  `binary` 文件名三者必须指向同一版本。当前 manifest 写 `1.2.0` 但目录中已有
-  `esp32c3_v1_2_1.bin`,实现时确认目标版本(预期 bump 到 `1.2.1`)并同步三处。
+- `notes` 更新为对 1.2.1 修复的概述;原 1.2.0 的 notes 挪入 `history`(保持
+  oldest-first,`loadChangelog` 会反转为 newest-first)。
+
+## 版本决策:目标 1.2.1
+
+`FIRMWARE_VERSION`(config.h)、manifest `version`、`binary` 文件名三者必须指向
+同一版本,本次统一定为 **`1.2.1`**:
+
+- **1.2.1 实际已存在**:目录中 `esp32c3_v1_2_1.bin`(683,856B)与 `esp32c3_v1_2_0.bin`
+  (651,632B)是不同构建;而顶层当前被 App 拉取的 `signal-light.bin` 恰为
+  683,856B(即 v1_2_1)。即线上早已在发 v1_2_1 二进制,manifest 却仍写 1.2.0 ——
+  本次一并修正这个既有错配。
+- **语义上是 patch**:物理按键功能已属 1.2.0(见其 notes);1.2.0 之后的提交
+  (开机满亮闪修复、连续计数 debounce、异常复位安全降级、LEDC 反相)均为其上的
+  bug 修复,符合 patch 递增,不跳 minor。
+- **`config.h` 本就落后**:`FIRMWARE_VERSION` 在上述修复提交时未同步 bump。
+
+**前提(实现时必做)**:现有 `esp32c3_v1_2_1.bin` 来源无法证明就是当前
+`esp32c3.ino` 编译产物。故在 `FIRMWARE_VERSION` 改为 `1.2.1` 后**从当前源码重新
+编译**,生成新的 `esp32c3_v1_2_1.bin`,确保「源码 = 版本号 = 二进制」可证一致,
+不信任来历不明的旧 bin。
 
 ### 6. 调用点
 
