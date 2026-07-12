@@ -55,6 +55,25 @@ brownout（欠压）检测阈值，芯片反复触发 brownout 复位，陷入"�
 `ESP_RST_SW` 必须归入"正常"——OTA 升级和改名功能都依赖固件重启后走完整初始化流程加载新
 固件/新名称，如果被误判为异常复位而跳过初始化，会导致 OTA 后设备无法使用。
 
+## 实测发现：单次读数会误判正常启动，改为连续计数 debounce
+
+首版实现里，只要单次 `esp_reset_reason()` 落在"异常"分类就立即跳过 BLE。实机验证时发现：
+**刷完固件后的正常启动**（esptool 的复位序列在这块 ESP32-C3 板子上被判定成了上方表格里的
+某个"异常"原因）也会被这套逻辑误判，导致烧录后第一次启动就直接跳过 BLE 进入安全睡眠。
+
+单次读数不足以确认"真的在复位循环里"——改为连续计数 debounce：
+
+- 新增 `RTC_DATA_ATTR int abnormalResetStreak`：RTC 内存变量，在深睡眠/看门狗/brownout
+  等复位之间保留数值，只有真正断电冷启动才会清零。
+- 每次启动：读数落在"异常"分类则 `abnormalResetStreak++`；只要落在"正常"分类就清零。
+- 只有 `abnormalResetStreak >= ABNORMAL_RESET_STREAK_THRESHOLD`（取 3）才真正判定为复位
+  循环、跳过 BLE 进入安全降级分支；未达阈值时按原分类对应的正常/异常走既有行为（即使单次
+  读数是"异常"，只要还没连续 3 次，也照常走完整 BLE 初始化流程）。
+
+这样一次性的烧录后启动、偶发的单次误判都不会触发安全降级；只有真的连续多次复位失败（电池
+持续过放导致的循环）才会在几次尝试后被拦下来。计数在进入安全降级分支时不主动清零——如果
+用户按键重试后立刻又是一次异常复位，会直接再次触发安全降级，不需要重新攒够 3 次。
+
 ## 安全降级分支行为
 
 1. 仍然完成三路 LED 引脚 `pinMode`/初始化电平、按键引脚 `pinMode`，以及从 NVS 读取
@@ -69,8 +88,9 @@ brownout（欠压）检测阈值，芯片反复触发 brownout 复位，陷入"�
    调用 `esp_deep_sleep_enable_gpio_wakeup` + `esp_deep_sleep_start()` 直接进入深度睡眠。
    `setup()` 到此不再返回，`loop()` 不会被调用。
 
-电池若仍未恢复，用户下次按键唤醒时会再次经历"brownout → 复位原因仍是 `ESP_RST_BROWNOUT`
-→ 警告闪烁 → 睡眠"，但这是用户每次主动触发的一次性尝试，不会无限空转，也不会比现状更差。
+电池若仍未恢复，用户下次按键唤醒时会再次经历"brownout → 复位原因仍是异常 → 计数保持在
+阈值以上 → 警告闪烁 → 睡眠"，但这是用户每次主动触发的一次性尝试，不会无限空转，也不会比
+现状更差。
 
 ## 边界处理
 
@@ -90,8 +110,13 @@ brownout（欠压）检测阈值，芯片反复触发 brownout 复位，陷入"�
 ### `led_esp32c3.ino`
 
 - 新增头文件 `#include "esp_system.h"`（`esp_reset_reason()`/`esp_reset_reason_t` 声明处）。
+- 新增全局状态（文件作用域，`setup()` 之外）：
+  ```cpp
+  RTC_DATA_ATTR int abnormalResetStreak = 0;
+  const int ABNORMAL_RESET_STREAK_THRESHOLD = 3;
+  ```
 - `setup()`：在 `Serial.println("Wakeup cause: ...")` 之后、`prefs.begin` 之前，新增复位
-  原因判断：
+  原因判断 + 连续计数 debounce：
   ```cpp
   esp_reset_reason_t resetReason = esp_reset_reason();
   bool isAbnormalReset = resetReason == ESP_RST_BROWNOUT ||
@@ -99,15 +124,21 @@ brownout（欠压）检测阈值，芯片反复触发 brownout 复位，陷入"�
                           resetReason == ESP_RST_INT_WDT ||
                           resetReason == ESP_RST_TASK_WDT ||
                           resetReason == ESP_RST_WDT;
+
+  abnormalResetStreak = isAbnormalReset ? abnormalResetStreak + 1 : 0;
+  bool shouldSafeBoot = abnormalResetStreak >= ABNORMAL_RESET_STREAK_THRESHOLD;
   ```
-  之后按 `isAbnormalReset` 分支：仍执行现有的 NVS 读取（引脚映射）+ LED/按键引脚初始化 +
-  `turnOffLights()`；若为异常复位，调用新增的 `enterSafeBootSleep()` 并直接返回，不再执行
-  `BLEDevice::init()` 及后续所有 BLE 相关初始化。
+  之后仍执行现有的 NVS 读取（引脚映射）+ LED/按键引脚初始化 + `turnOffLights()`；再按
+  `shouldSafeBoot` 分支：达到阈值才调用新增的 `enterSafeBootSleep()` 并直接返回（内部会进入
+  深度睡眠，不会返回），不再执行 `BLEDevice::init()` 及后续所有 BLE 相关初始化；未达阈值则
+  照常继续走完整 BLE 初始化流程，即使这次读数本身是"异常"分类。
 - 新增函数 `blinkLowPowerWarning()`：三路 LED 同时闪烁固定次数（如 5 次，约 150ms 亮/150ms
-  灭），复用现有 `setLights()`。
+  灭），复用现有 `setLights()`；亮度用 `currentOnValue()` 换算（而非直接用 `LED_ON` 常量
+  100% 点亮），与 `animateAlarm`/`animateError` 等其余指示效果的亮度换算方式保持一致，避免
+  用户调低过亮度后这里突然满亮刺眼。
 - 新增函数 `enterSafeBootSleep()`：调用 `blinkLowPowerWarning()`，然后执行与
   `enterDeepSleep()` 相同的"等按键释放 → 使能 GPIO 唤醒 → `esp_deep_sleep_start()`"序列。
-  这段等待/唤醒逻辑与 `enterDeepSleep()` 重复，可以从 `enterDeepSleep()` 中抽出一个共享的
+  这段等待/唤醒逻辑与 `enterDeepSleep()` 重复，从 `enterDeepSleep()` 中抽出一个共享的
   `sleepWithGpioWakeup()` 辅助函数供两处调用，避免逻辑漂移。
 
 ### `config.h`
@@ -119,16 +150,19 @@ brownout（欠压）检测阈值，芯片反复触发 brownout 复位，陷入"�
 该固件为 Arduino/ESP32 项目，没有自动化测试框架，且硬件级 brownout 无法在开发环境里干净
 复现。验证方式为手动烧录 + 观察：
 
-1. **正常路径不受影响**：正常上电、OTA 升级后重启、改名后重启、按键唤醒——确认都能正常进入
-   `MODE_DISCONNECTED` 呼吸态，BLE 可被 App 发现并连接，与修改前行为一致。
-2. **安全降级路径**（临时验证）：临时把 `isAbnormalReset` 强制置为 `true` 编译烧录一次，
-   确认：
-   - 三路 LED 同时闪烁的警告样式清晰可辨，明显区别于呼吸/轮转等现有效果；
+1. **正常路径不受影响**：正常上电、烧录后启动、OTA 升级后重启、改名后重启、按键唤醒——确认
+   都能正常进入 `MODE_DISCONNECTED` 呼吸态，BLE 可被 App 发现并连接，与修改前行为一致。
+   （首版实现在这一项上实测翻车过一次：烧录后的正常启动被单次读数误判成异常复位，直接跳过
+   了 BLE——已改为连续计数 debounce，见上方"实测发现"一节，需要重新按这一项验证确认修复。）
+2. **安全降级路径**（临时验证）：临时把 `ABNORMAL_RESET_STREAK_THRESHOLD` 改成 `0`（或把
+   `shouldSafeBoot` 强制置为 `true`）编译烧录一次，确认：
+   - 三路 LED 同时闪烁的警告样式清晰可辨，明显区别于呼吸/轮转等现有效果，且亮度跟随当前
+     亮度设置（调低亮度后闪烁也应随之变暗，不应满亮）；
    - 警告闪烁结束后设备确实进入深度睡眠（可用功耗表确认电流骤降到深睡眠水平，或观察灯全灭
      且无法通过 BLE 扫描到设备）；
-   - 按键可以正常唤醒，唤醒后若复位原因判断已改回真实的 `esp_reset_reason()`，能进入正常
-     完整流程。
-   - 验证完成后必须改回真实的 `esp_reset_reason()` 判断，重新烧录正式版本。
+   - 按键可以正常唤醒，唤醒后若阈值判断已改回真实的 `ABNORMAL_RESET_STREAK_THRESHOLD`（3），
+     能进入正常完整流程。
+   - 验证完成后必须改回真实的阈值判断，重新烧录正式版本。
 3. **真实电池耗尽触发 brownout 的完整链路**不在本轮验证范围内（需要数小时的实际耗电测试）。
    如果修复上线后原症状仍然复现，说明需要回来补充真实电压采集（用户此前已知晓并接受这个
    权衡）。
