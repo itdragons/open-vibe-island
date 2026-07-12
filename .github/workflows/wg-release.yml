@@ -109,7 +109,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
-            --title "WG Open Island ${{ steps.version.outputs.tag }}" \
+            --title "WG Open Island v${{ steps.version.outputs.version }}" \
             --draft \
             --notes "Unsigned/ad-hoc-signed build. Right-click → Open on first launch to bypass Gatekeeper. Please publish this draft promptly — the WG appcast will point at these assets once committed, and in-app \"Check for Updates\" will 404 until this release is published." \
             "output/package/WG Open Island.dmg#WG Open Island.dmg (macOS, Universal)" \
