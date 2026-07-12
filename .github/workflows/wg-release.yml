@@ -52,12 +52,15 @@ jobs:
           OPEN_ISLAND_UNIVERSAL: "true"
           OPEN_ISLAND_SPARKLE_FEED_URL: "https://raw.githubusercontent.com/itdragons/open-vibe-island/wg/appcast-wg.xml"
           OPEN_ISLAND_EDDSA_PUBLIC_KEY: ${{ vars.WG_SPARKLE_PUBLIC_KEY }}
+          # DMG filename carries the version (user-facing download only).
+          # ZIP keeps the fixed name — it is the Sparkle enclosure and the appcast URL is hardcoded.
+          OPEN_ISLAND_DMG_PATH: "${{ github.workspace }}/output/package/WG Open Island-${{ steps.version.outputs.version }}.dmg"
         run: zsh scripts/package-app.sh
 
       - name: Verify artifacts
         run: |
           test -f "output/package/WG Open Island.zip"
-          test -f "output/package/WG Open Island.dmg"
+          test -f "output/package/WG Open Island-${{ steps.version.outputs.version }}.dmg"
           ls -lh output/package/
 
       - name: Verify ad-hoc code signature
@@ -112,7 +115,7 @@ jobs:
             --title "WG Open Island v${{ steps.version.outputs.version }}" \
             --draft \
             --notes "Unsigned/ad-hoc-signed build. Right-click → Open on first launch to bypass Gatekeeper. Please publish this draft promptly — the WG appcast will point at these assets once committed, and in-app \"Check for Updates\" will 404 until this release is published." \
-            "output/package/WG Open Island.dmg#WG Open Island.dmg (macOS, Universal)" \
+            "output/package/WG Open Island-${{ steps.version.outputs.version }}.dmg#WG Open Island-${{ steps.version.outputs.version }}.dmg (macOS, Universal)" \
             "output/package/WG Open Island.zip#WG Open Island.zip (macOS, Universal)"
 
       - name: Update appcast-wg.xml on wg
