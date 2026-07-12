@@ -90,13 +90,33 @@ jobs:
         run: |
           sign_tool=".build/artifacts/sparkle/Sparkle/bin/sign_update"
           zip_path="output/package/WG Open Island.zip"
+
+          if [[ -z "$SPARKLE_EDDSA_KEY" ]]; then
+            echo "::warning::SPARKLE_EDDSA_KEY not set — skipping appcast update"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           sign_output="$(echo "$SPARKLE_EDDSA_KEY" | "$sign_tool" "$zip_path" --ed-key-file -)"
           ed_signature="$(echo "$sign_output" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
           length="$(echo "$sign_output" | sed -n 's/.*length="\([^"]*\)".*/\1/p')"
           echo "ed_signature=$ed_signature" >> "$GITHUB_OUTPUT"
           echo "length=$length" >> "$GITHUB_OUTPUT"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release (draft)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "WG Open Island ${{ steps.version.outputs.tag }}" \
+            --draft \
+            --notes "Unsigned/ad-hoc-signed build. Right-click → Open on first launch to bypass Gatekeeper. Please publish this draft promptly — the WG appcast will point at these assets once committed, and in-app \"Check for Updates\" will 404 until this release is published." \
+            "output/package/WG Open Island.dmg#WG Open Island.dmg (macOS, Universal)" \
+            "output/package/WG Open Island.zip#WG Open Island.zip (macOS, Universal)"
 
       - name: Update appcast-wg.xml on wg
+        if: steps.sparkle_sign.outputs.signed == 'true'
         run: |
           cp appcast-wg.xml /tmp/appcast-wg.xml
           git fetch origin wg
@@ -111,14 +131,3 @@ jobs:
           git add appcast-wg.xml
           git commit -m "chore: update appcast-wg.xml for ${{ steps.version.outputs.tag }}"
           git push origin wg
-
-      - name: Create GitHub Release (draft)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "${{ steps.version.outputs.tag }}" \
-            --title "WG Open Island ${{ steps.version.outputs.tag }}" \
-            --draft \
-            --notes "Unsigned/ad-hoc-signed build. Right-click → Open on first launch to bypass Gatekeeper." \
-            "output/package/WG Open Island.dmg#WG Open Island.dmg (macOS, Universal)" \
-            "output/package/WG Open Island.zip#WG Open Island.zip (macOS, Universal)"
