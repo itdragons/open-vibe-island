@@ -305,12 +305,16 @@ void setup() {
   );
   otaDataCharacteristic->setCallbacks(new OtaDataCallback());
 
-  // 信息特征值：只读，暴露当前固件版本号
+  // 信息特征值：只读，以紧凑 JSON 暴露硬件标识与当前固件版本号，供 App
+  // 解析出 {hardware, version} —— hardware 决定在线更新的取用路径。旧固件
+  // 只上报裸版本号，App 端会回退为 hardware="esp32c3"，保持向后兼容。
   BLECharacteristic *infoCharacteristic = service->createCharacteristic(
     INFO_CHARACTERISTIC_UUID,
     BLECharacteristic::PROPERTY_READ
   );
-  infoCharacteristic->setValue(FIRMWARE_VERSION.c_str());
+  String infoJson = String("{\"hardware\":\"") + HARDWARE_ID +
+                    "\",\"version\":\"" + FIRMWARE_VERSION + "\"}";
+  infoCharacteristic->setValue(infoJson.c_str());
 
   // 启动服务，使上面注册的特征值对外可见
   service->start();

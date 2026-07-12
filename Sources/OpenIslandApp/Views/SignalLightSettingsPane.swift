@@ -368,7 +368,7 @@ struct SignalLightSettingsPane: View {
     private func presentChangelog() {
         isShowingChangelog = true
         Task {
-            await model.signalLight.firmwareUpdateChecker.loadChangelog()
+            await model.signalLight.firmwareUpdateChecker.loadChangelog(hardware: model.signalLight.hardwareID)
         }
     }
 
@@ -573,7 +573,7 @@ struct SignalLightSettingsPane: View {
     private func checkForFirmwareUpdates() {
         firmwareDownloadErrorMessage = nil
         Task {
-            await model.signalLight.firmwareUpdateChecker.checkForUpdates(currentVersion: model.signalLight.firmwareVersion)
+            await model.signalLight.firmwareUpdateChecker.checkForUpdates(hardware: model.signalLight.hardwareID, currentVersion: model.signalLight.firmwareVersion)
         }
     }
 

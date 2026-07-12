@@ -34,6 +34,10 @@ final class SignalLightCoordinator: NSObject {
     private(set) var status: SignalLightConnectionStatus = .disconnected
     private(set) var discoveredDevices: [SignalLightDiscoveredDevice] = []
     private(set) var firmwareVersion: String?
+    /// Hardware ID reported by the connected device (e.g. `esp32c3`), used to
+    /// pick the per-hardware online firmware path. Legacy firmware that only
+    /// reports a bare version resolves to `esp32c3`.
+    private(set) var hardwareID: String?
     private(set) var lastDeviceConfig: SignalLightDeviceConfig?
     private(set) var lastStatusMessage: String?
     let firmwareUpdater = SignalLightFirmwareUpdater()
@@ -214,6 +218,7 @@ extension SignalLightCoordinator: CBCentralManagerDelegate {
             otaControlCharacteristic = nil
             otaDataCharacteristic = nil
             firmwareVersion = nil
+            hardwareID = nil
             firmwareUpdater.handleUnexpectedDisconnect()
             firmwareUpdateChecker.reset()
             status = .disconnected
@@ -290,7 +295,9 @@ extension SignalLightCoordinator: CBPeripheralDelegate {
             }
 
             if characteristic.uuid == Self.infoCharacteristicUUID {
-                firmwareVersion = text
+                let info = SignalLightDeviceInfo.parse(text)
+                firmwareVersion = info.version
+                hardwareID = info.hardware
             } else if characteristic.uuid == Self.otaControlCharacteristicUUID {
                 if let config = SignalLightConfigDecoder.decode(text) {
                     lastDeviceConfig = config
