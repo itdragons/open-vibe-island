@@ -111,10 +111,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Remove any pre-existing release for this tag (e.g. from a re-run) so
-          # the draft is recreated cleanly. Keep the tag itself — it drives the run.
-          gh release delete "${{ steps.version.outputs.tag }}" --yes 2>/dev/null || true
-          gh release create "${{ steps.version.outputs.tag }}" \
+          tag="${{ steps.version.outputs.tag }}"
+          # Delete EVERY pre-existing release for this tag (a re-run, or concurrent
+          # runs, can leave multiple drafts). Keep the tag itself — it drives the run.
+          # gh release delete targets one release by tag; loop over the API to cover all.
+          for id in $(gh api "repos/${{ github.repository }}/releases" --paginate \
+                        --jq ".[] | select(.tag_name==\"$tag\") | .id"); do
+            echo "Deleting existing release $id for $tag"
+            gh api -X DELETE "repos/${{ github.repository }}/releases/$id"
+          done
+          gh release create "$tag" \
             --title "WG Open Island v${{ steps.version.outputs.version }}" \
             --draft \
             --notes "Unsigned/ad-hoc-signed build. Right-click → Open on first launch to bypass Gatekeeper. Please publish this draft promptly — the WG appcast will point at these assets once committed, and in-app \"Check for Updates\" will 404 until this release is published." \
