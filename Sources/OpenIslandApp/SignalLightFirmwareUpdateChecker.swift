@@ -105,7 +105,10 @@ final class SignalLightFirmwareUpdateChecker {
         do {
             let manifest = try await fetchManifest()
             let latestEntry = "\(manifest.version): \(manifest.notes ?? "")"
-            changelogState = .loaded([latestEntry] + (manifest.history ?? []))
+            // `history` is maintained oldest-first in version.json (each release
+            // appends the previous version's note to the end) — reverse it so the
+            // full list stays newest-first, matching `latestEntry` being prepended.
+            changelogState = .loaded([latestEntry] + (manifest.history ?? []).reversed())
         } catch {
             changelogState = .failed("Couldn't load changelog")
         }
