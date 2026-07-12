@@ -7,29 +7,16 @@
         <language>en</language>
         <!-- Items are added by .github/workflows/wg-release.yml via scripts/update-appcast-wg.sh -->
         <item>
-            <title>Version 1.0.0</title>
-            <sparkle:version>3</sparkle:version>
-            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <pubDate>Sun, 12 Jul 2026 05:56:07 +0000</pubDate>
-            <enclosure
-                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.0/WG.Open.Island.zip"
-                type="application/octet-stream"
-                sparkle:edSignature="ZcEhofaURgUiQ+dhlCSGlWtnh91StQXRhHXsXDTOTqgiQLlqi97l9Z1+STmyuFt839Cbg0vTcEOIX0Rov2xmDA=="
-                length="12588409"
-            />
-        </item>
-        <item>
             <title>Version 1.0.1</title>
-            <sparkle:version>2</sparkle:version>
+            <sparkle:version>4</sparkle:version>
             <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <pubDate>Sun, 12 Jul 2026 05:15:20 +0000</pubDate>
+            <pubDate>Sun, 12 Jul 2026 15:30:23 +0000</pubDate>
             <enclosure
                 url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.1/WG.Open.Island.zip"
                 type="application/octet-stream"
-                sparkle:edSignature="9I3Qj2VCn5duWoglChcQ6Zke6Nrd1nKZk17U2i5WN+6MspBUVxJryepqfoFu1DrNMEet5q0TBy1WPqQ/45C4Dg=="
-                length="12586720"
+                sparkle:edSignature="iSV9HT1+h0EBoyflpVj/y4EZ3VcxJ2ho3HhsneeBLZR3t3EwyIMLoEwUqw1BJnzmBDcqWOW+/+k1JS8dZTUqBg=="
+                length="12586719"
             />
         </item>
     </channel>
