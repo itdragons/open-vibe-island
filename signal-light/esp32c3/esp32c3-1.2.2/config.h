@@ -43,7 +43,7 @@ const String HARDWARE_ID = "esp32c3";
 // -----------------------------------------------------------------------------
 // 固件版本 (Firmware Version) — bump manually before compiling a new build
 // -----------------------------------------------------------------------------
-const String FIRMWARE_VERSION = "1.2.1";
+const String FIRMWARE_VERSION = "1.2.2";
 #define INFO_CHARACTERISTIC_UUID "77697364-6f6d-6761-7264-656e00000005"
 
 #endif // CONFIG_H
