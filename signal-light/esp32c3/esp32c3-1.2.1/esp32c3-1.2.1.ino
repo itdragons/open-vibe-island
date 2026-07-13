@@ -155,7 +155,6 @@ int scaleToOnValue(int rawValue, int onValue);
 void checkButton();
 void enterDeepSleep();
 void sleepWithGpioWakeup();
-void blinkLowPowerWarning();
 void enterSafeBootSleep();
 void configureLedChannel(int pin, ledc_channel_t channel);
 void configureAllLedChannels();
@@ -414,28 +413,19 @@ void sleepWithGpioWakeup() {
   esp_deep_sleep_start();
 }
 
-// 异常复位警告：三色 LED 同闪，区别于任何常规模式，提示"疑似低电/故障，已跳过本次启动"。
-// 用 currentOnValue() 而非 LED_ON，避免用户调低过亮度后这里突然满亮刺眼。
-void blinkLowPowerWarning() {
-  const int blinkCount = 5;
-  const unsigned long blinkIntervalMs = 150;
-  int onValue = currentOnValue();
-
-  for (int i = 0; i < blinkCount; i++) {
-    setLights(onValue, onValue, onValue);
-    delay(blinkIntervalMs);
-    setLights(LED_OFF, LED_OFF, LED_OFF);
-    delay(blinkIntervalMs);
-  }
-}
-
-// 检测到异常复位（brownout/看门狗/panic）时的安全降级入口：闪警告后直接深度睡眠，
-// 不初始化 BLE，避免再次触发同样的电流冲击型复位。不会返回。
+// 检测到异常复位（brownout/看门狗/panic）时的安全降级入口：不初始化 BLE，也不点亮
+// 任何 LED，直接进入深度睡眠。不会返回。
+//
+// 这里刻意「不闪警告灯」：低电时三路 LED 同亮的电流冲击本身就足以再次拉低电压、触发
+// brownout 复位，而 brownout 属于异常复位会让 abnormalResetStreak 只增不减（只有正常复位
+// 才清零），于是「safe boot→闪灯→brownout→复位→safe boot」自锁成死循环，设备永远睡不下去、
+// 表现为三色灯一直快闪、关不了机。去掉点灯这一电流冲击源，safe boot 就能立即睡死（=关机），
+// 之后用户按键唤醒是正常复位（ESP_RST_DEEPSLEEP），streak 归零，循环被打破。
 void enterSafeBootSleep() {
-  Serial.println(">>> 安全降级：跳过 BLE 初始化，闪烁警告后进入深度睡眠");
+  Serial.println(">>> 安全降级：跳过 BLE 初始化，不点灯，直接进入深度睡眠");
   Serial.flush();
 
-  blinkLowPowerWarning();
+  turnOffLights();
 
   sleepWithGpioWakeup();
 }
