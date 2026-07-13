@@ -123,11 +123,10 @@ bool lastButtonState = HIGH;           // 按键上一次读到的电平，LOW->
 bool buttonPressSeen = false;          // 本次运行期间是否现场检测到过按下沿，避免把唤醒自己的
                                         // 那次按压（开机时读到的初始电平已是 LOW）的松开误判为新点击
 
-// 连续异常复位计数：RTC_DATA_ATTR 变量在深睡眠/看门狗/brownout 等复位间保留，只在真正
-// 断电冷启动时清零。烧录固件本身触发的复位序列在个别板子上也可能被判定成"异常"，单次
-// 读数不足为凭——只有连续达到阈值才说明是真的复位循环，避免误伤一次性的烧录后启动。
-RTC_DATA_ATTR int abnormalResetStreak = 0;
-const int ABNORMAL_RESET_STREAK_THRESHOLD = 3;
+// 防欠压死循环的"本次开机是否已稳定跑起来"标记（判据与理由见 setup()）。持久化在 NVS
+// 而非 RTC 变量：真·brownout 会拉低电压、可能清空 RTC 内存，只有 flash 能可靠保住状态。
+bool bootConfirmed = false;                 // 本次运行是否已稳定运行足够久，可清除 pendingBoot
+const unsigned long BOOT_STABLE_MS = 3000;  // 稳定运行超过该时长即认定本次开机成功、越过了 BLE 电流冲击
 
 // 函数前向声明，方便在文件中以任意顺序定义/调用
 void handleCommand(String cmd);
@@ -206,28 +205,24 @@ void setup() {
   Serial.println("C3 LED starting...");
   Serial.println("Wakeup cause: " + String(esp_sleep_get_wakeup_cause()));
 
-  // 判断本次复位是否异常（brownout/看门狗/panic）。异常复位说明上一次运行中途被硬件强制
-  // 打断，很可能是电池电压走低导致 BLE 电流冲击触发欠压复位——如果照常重新初始化 BLE，
-  // 大概率立刻再次触发同样的复位，形成"复位→频闪→复位"的死循环。正常上电、按键唤醒
-  // （ESP_RST_DEEPSLEEP）、OTA/改名后固件自己发起的重启（ESP_RST_SW）都不算异常。
-  esp_reset_reason_t resetReason = esp_reset_reason();
-  bool isAbnormalReset = resetReason == ESP_RST_BROWNOUT ||
-                          resetReason == ESP_RST_PANIC ||
-                          resetReason == ESP_RST_INT_WDT ||
-                          resetReason == ESP_RST_TASK_WDT ||
-                          resetReason == ESP_RST_WDT;
-
-  // 单次读数不足以确认是真的复位循环（烧录固件触发的复位序列在个别板子上也可能被判为
-  // 异常）。用连续计数去抖：连续多次异常才判定为真循环，出现一次正常复位就清零，避免
-  // 误伤一次性的烧录后启动/偶发复位。
-  abnormalResetStreak = isAbnormalReset ? abnormalResetStreak + 1 : 0;
-  bool shouldSafeBoot = abnormalResetStreak >= ABNORMAL_RESET_STREAK_THRESHOLD;
-  Serial.println("Reset reason: " + String(resetReason) +
-                  ", abnormal streak: " + String(abnormalResetStreak) +
+  // 防欠压死循环。低电时电流最大的 BLE 初始化会把电池拉垮、触发 brownout 复位；若每次开机
+  // 都照常重新初始化 BLE，就会"复位→BLE→再 brownout"无限循环——灯一直微亮频闪，而且永远
+  // 走不到 loop() 里的按键处理，导致关不了机。判据不能依赖 RTC 变量或复位原因分类：真·brownout
+  // 时它们都不可靠（RTC 内存可能被清空、复位原因未必被归类为 brownout）。改用 NVS 持久标记：
+  //   pendingBoot=true 表示"上次开机已跑到 BLE 这一步，但还没稳定运行起来就挂了"。
+  // 本次开机若发现它仍为 true，且不是被用户按键唤醒的（即 brownout 自动重启，无 GPIO 唤醒源），
+  // 就判定为欠压死循环，熄灯直接深度睡眠、待着不动，把"何时再试"交给用户按键。按键唤醒
+  // （wokenByButton）视为用户主动开机，无条件再给一次正常启动的机会。
+  prefs.begin("wglight", false);
+  bool pendingBoot = prefs.getBool("pendingBoot", false);
+  bool wokenByButton = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_GPIO;
+  bool shouldSafeBoot = pendingBoot && !wokenByButton;
+  Serial.println("Reset reason: " + String(esp_reset_reason()) +
+                  ", pendingBoot: " + String(pendingBoot) +
+                  ", wokenByButton: " + String(wokenByButton) +
                   (shouldSafeBoot ? " -> safe boot" : ""));
 
   // 从 NVS 读取持久化的引脚分配与蓝牙名称；全新芯片没有记录时用 config.h 默认值
-  prefs.begin("wglight", false);
   led_red = prefs.getInt("pinRed", DEFAULT_LED_RED);
   led_yellow = prefs.getInt("pinYellow", DEFAULT_LED_YELLOW);
   led_green = prefs.getInt("pinGreen", DEFAULT_LED_GREEN);
@@ -260,11 +255,17 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   lastButtonState = digitalRead(BUTTON_PIN);
 
-  // 安全降级：跳过 BLE 初始化（最大的电流冲击源），闪一个专属警告色后直接深度睡眠，
-  // 交给用户按键决定何时重试。enterSafeBootSleep() 内部会进入深度睡眠，不会返回。
+  // 安全降级：跳过 BLE 初始化（最大的电流冲击源），熄灯后直接深度睡眠，交给用户按键决定
+  // 何时重试。enterSafeBootSleep() 内部会进入深度睡眠，不会返回。
   if (shouldSafeBoot) {
     enterSafeBootSleep();
   }
+
+  // 即将进行 BLE 初始化（电流冲击点）。先把 pendingBoot 标记写进 NVS：此刻还没点 BLE，
+  // 电流最小、电压最高，是写 flash 最安全的时刻；NVS 写入本身掉电安全（写一半掉电只会
+  // 保留旧值、不会损坏）。若接下来 brownout，本标记留在 flash 里，下次非按键开机即降级。
+  // 稳定运行后由 loop() 清除（见 loop() 顶部）。
+  prefs.putBool("pendingBoot", true);
 
   // 初始化 BLE 协议栈，并调大 MTU 以提升 OTA 数据传输效率
   BLEDevice::init(bleName.c_str());
@@ -332,6 +333,14 @@ void setup() {
 
 // 主循环：处理延迟重启、串口调试指令、接线测试超时，并渲染当前灯光模式
 void loop() {
+  // 稳定运行超过 BOOT_STABLE_MS，说明本次开机已越过 BLE 初始化的电流冲击、没有被 brownout
+  // 打断：清除 NVS 里的 pendingBoot 标记，使下次正常开机不被误判为欠压死循环。bootConfirmed
+  // 去重，保证整段运行期只写一次 flash。
+  if (!bootConfirmed && millis() >= BOOT_STABLE_MS) {
+    prefs.putBool("pendingBoot", false);
+    bootConfirmed = true;
+  }
+
   // OTA 升级成功后，延迟重启让状态提示先发送出去
   if (restartAfterOta && millis() >= restartAtMs) {
     ESP.restart();
@@ -413,16 +422,14 @@ void sleepWithGpioWakeup() {
   esp_deep_sleep_start();
 }
 
-// 检测到异常复位（brownout/看门狗/panic）时的安全降级入口：不初始化 BLE，也不点亮
-// 任何 LED，直接进入深度睡眠。不会返回。
+// 判定为欠压死循环（pendingBoot 仍为 true 且非按键唤醒，见 setup()）时的安全降级入口：
+// 不初始化 BLE，也不点亮任何 LED，直接进入深度睡眠。不会返回。
 //
-// 这里刻意「不闪警告灯」：低电时三路 LED 同亮的电流冲击本身就足以再次拉低电压、触发
-// brownout 复位，而 brownout 属于异常复位会让 abnormalResetStreak 只增不减（只有正常复位
-// 才清零），于是「safe boot→闪灯→brownout→复位→safe boot」自锁成死循环，设备永远睡不下去、
-// 表现为三色灯一直快闪、关不了机。去掉点灯这一电流冲击源，safe boot 就能立即睡死（=关机），
-// 之后用户按键唤醒是正常复位（ESP_RST_DEEPSLEEP），streak 归零，循环被打破。
+// 这里刻意「什么都不点」：低电时点灯的电流冲击本身就可能再次拉低电压触发 brownout。
+// 直接熄灯睡死后，深度睡眠电流极低、电池电压得以回升，设备保持关机不再频闪；之后用户
+// 按键唤醒（wokenByButton）会跳过本降级、再给一次正常启动的机会，循环被打破。
 void enterSafeBootSleep() {
-  Serial.println(">>> 安全降级：跳过 BLE 初始化，不点灯，直接进入深度睡眠");
+  Serial.println(">>> 安全降级：疑似欠压死循环，跳过 BLE 初始化，不点灯，直接进入深度睡眠");
   Serial.flush();
 
   turnOffLights();
