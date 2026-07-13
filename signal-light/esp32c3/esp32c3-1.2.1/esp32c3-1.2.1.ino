@@ -155,6 +155,8 @@ void checkButton();
 void enterDeepSleep();
 void sleepWithGpioWakeup();
 void enterSafeBootSleep();
+void holdLedOutputsOffDuringSleep();
+void releaseLedOutputHolds();
 void configureLedChannel(int pin, ledc_channel_t channel);
 void configureAllLedChannels();
 void writeLedChannel(ledc_channel_t channel, int value);
@@ -248,6 +250,10 @@ void setup() {
 
   // 配置 LEDC 定时器与三路输出反相通道（占空比 0=灭），接管三路引脚
   configureAllLedChannels();
+
+  // 深睡唤醒后 GPIO hold 仍然有效。必须先让普通 GPIO 和 LEDC 都准备好高电平
+  // 熄灯态，再解除 hold；否则从复位到 setup() 完成之间三路会同时闪亮。
+  releaseLedOutputHolds();
 
   // 无自锁开关，接 GND，内部上拉；旧硬件该引脚悬空，稳定读 HIGH，不会误触发
   pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -414,8 +420,28 @@ void sleepWithGpioWakeup() {
   }
   delay(50);
 
+  // LED 是低电平点亮：睡眠前锁住当前的高电平（熄灯），并让锁定在
+  // deep sleep 期间持续有效。按键唤醒导致 CPU 重新启动时，引脚仍保持熄灯电平。
+  holdLedOutputsOffDuringSleep();
+
   esp_deep_sleep_enable_gpio_wakeup(1ULL << BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
   esp_deep_sleep_start();
+}
+
+// 保持三路 LED 的熄灯电平，跨越 deep sleep 和唤醒复位。
+void holdLedOutputsOffDuringSleep() {
+  gpio_hold_en((gpio_num_t)led_red);
+  gpio_hold_en((gpio_num_t)led_yellow);
+  gpio_hold_en((gpio_num_t)led_green);
+  gpio_deep_sleep_hold_en();
+}
+
+// setup() 已把三路 LEDC 配成熄灯态后再释放 pad hold，避免释放瞬间跳到低电平。
+void releaseLedOutputHolds() {
+  gpio_hold_dis((gpio_num_t)led_red);
+  gpio_hold_dis((gpio_num_t)led_yellow);
+  gpio_hold_dis((gpio_num_t)led_green);
+  gpio_deep_sleep_hold_dis();
 }
 
 // 判定为欠压死循环（pendingBoot 仍 true 且非按键唤醒，见 setup()）时的降级入口：不初始化
