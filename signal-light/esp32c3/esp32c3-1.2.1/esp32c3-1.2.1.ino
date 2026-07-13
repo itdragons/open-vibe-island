@@ -123,10 +123,11 @@ bool lastButtonState = HIGH;           // 按键上一次读到的电平，LOW->
 bool buttonPressSeen = false;          // 本次运行期间是否现场检测到过按下沿，避免把唤醒自己的
                                         // 那次按压（开机时读到的初始电平已是 LOW）的松开误判为新点击
 
-// 防欠压死循环的"本次开机是否已稳定跑起来"标记（判据见 setup()）。存 NVS 而非 RTC 变量：
-// brownout 会拉低电压、可能清空 RTC 内存，只有 flash 能可靠保住状态。
-bool bootConfirmed = false;                 // 本次运行是否已稳定足够久，可清除 pendingBoot
-const unsigned long BOOT_STABLE_MS = 3000;  // 稳定运行超此时长即认定越过 BLE 电流冲击、开机成功
+// 连续异常复位计数：RTC_DATA_ATTR 变量在深睡眠/看门狗/brownout 等复位间保留，只在真正
+// 断电冷启动时清零。烧录固件本身触发的复位序列在个别板子上也可能被判定成"异常"，单次
+// 读数不足为凭——只有连续达到阈值才说明是真的复位循环，避免误伤一次性的烧录后启动。
+RTC_DATA_ATTR int abnormalResetStreak = 0;
+const int ABNORMAL_RESET_STREAK_THRESHOLD = 3;
 
 // 函数前向声明，方便在文件中以任意顺序定义/调用
 void handleCommand(String cmd);
@@ -154,9 +155,8 @@ int scaleToOnValue(int rawValue, int onValue);
 void checkButton();
 void enterDeepSleep();
 void sleepWithGpioWakeup();
+void blinkLowPowerWarning();
 void enterSafeBootSleep();
-void holdLedOutputsOffDuringSleep();
-void releaseLedOutputHolds();
 void configureLedChannel(int pin, ledc_channel_t channel);
 void configureAllLedChannels();
 void writeLedChannel(ledc_channel_t channel, int value);
@@ -207,22 +207,28 @@ void setup() {
   Serial.println("C3 LED starting...");
   Serial.println("Wakeup cause: " + String(esp_sleep_get_wakeup_cause()));
 
-  // 防欠压死循环：低电时 BLE 初始化的电流冲击会触发 brownout 复位，若每次开机都照常初始化
-  // BLE 就会"复位→BLE→再 brownout"无限循环——灯一直微亮频闪，且走不到 loop() 的按键处理而
-  // 关不了机。判据不用 RTC 变量或复位原因（brownout 时都不可靠：RTC 可能被清、复位原因未必
-  // 归类为 brownout），改用 NVS 持久标记 pendingBoot——它为 true 表示"上次开机跑到了 BLE 却
-  // 没稳定运行就挂了"。本次开机若它仍为 true 且非按键唤醒（即 brownout 自动重启），即判定死
-  // 循环，熄灯直接深睡、保持关机；按键唤醒视为用户主动开机，无条件再给一次机会。
-  prefs.begin("wglight", false);
-  bool pendingBoot = prefs.getBool("pendingBoot", false);
-  bool wokenByButton = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_GPIO;
-  bool shouldSafeBoot = pendingBoot && !wokenByButton;
-  Serial.println("Reset reason: " + String(esp_reset_reason()) +
-                  ", pendingBoot: " + String(pendingBoot) +
-                  ", wokenByButton: " + String(wokenByButton) +
+  // 判断本次复位是否异常（brownout/看门狗/panic）。异常复位说明上一次运行中途被硬件强制
+  // 打断，很可能是电池电压走低导致 BLE 电流冲击触发欠压复位——如果照常重新初始化 BLE，
+  // 大概率立刻再次触发同样的复位，形成"复位→频闪→复位"的死循环。正常上电、按键唤醒
+  // （ESP_RST_DEEPSLEEP）、OTA/改名后固件自己发起的重启（ESP_RST_SW）都不算异常。
+  esp_reset_reason_t resetReason = esp_reset_reason();
+  bool isAbnormalReset = resetReason == ESP_RST_BROWNOUT ||
+                          resetReason == ESP_RST_PANIC ||
+                          resetReason == ESP_RST_INT_WDT ||
+                          resetReason == ESP_RST_TASK_WDT ||
+                          resetReason == ESP_RST_WDT;
+
+  // 单次读数不足以确认是真的复位循环（烧录固件触发的复位序列在个别板子上也可能被判为
+  // 异常）。用连续计数去抖：连续多次异常才判定为真循环，出现一次正常复位就清零，避免
+  // 误伤一次性的烧录后启动/偶发复位。
+  abnormalResetStreak = isAbnormalReset ? abnormalResetStreak + 1 : 0;
+  bool shouldSafeBoot = abnormalResetStreak >= ABNORMAL_RESET_STREAK_THRESHOLD;
+  Serial.println("Reset reason: " + String(resetReason) +
+                  ", abnormal streak: " + String(abnormalResetStreak) +
                   (shouldSafeBoot ? " -> safe boot" : ""));
 
   // 从 NVS 读取持久化的引脚分配与蓝牙名称；全新芯片没有记录时用 config.h 默认值
+  prefs.begin("wglight", false);
   led_red = prefs.getInt("pinRed", DEFAULT_LED_RED);
   led_yellow = prefs.getInt("pinYellow", DEFAULT_LED_YELLOW);
   led_green = prefs.getInt("pinGreen", DEFAULT_LED_GREEN);
@@ -251,24 +257,15 @@ void setup() {
   // 配置 LEDC 定时器与三路输出反相通道（占空比 0=灭），接管三路引脚
   configureAllLedChannels();
 
-  // 深睡唤醒后 GPIO hold 仍然有效。必须先让普通 GPIO 和 LEDC 都准备好高电平
-  // 熄灯态，再解除 hold；否则从复位到 setup() 完成之间三路会同时闪亮。
-  releaseLedOutputHolds();
-
   // 无自锁开关，接 GND，内部上拉；旧硬件该引脚悬空，稳定读 HIGH，不会误触发
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   lastButtonState = digitalRead(BUTTON_PIN);
 
-  // 安全降级：跳过 BLE 初始化（最大的电流冲击源），熄灯后直接深度睡眠，交给用户按键决定
-  // 何时重试。enterSafeBootSleep() 内部会进入深度睡眠，不会返回。
+  // 安全降级：跳过 BLE 初始化（最大的电流冲击源），闪一个专属警告色后直接深度睡眠，
+  // 交给用户按键决定何时重试。enterSafeBootSleep() 内部会进入深度睡眠，不会返回。
   if (shouldSafeBoot) {
     enterSafeBootSleep();
   }
-
-  // BLE 初始化前（电流最小、电压最高，写 flash 最安全；NVS 写入本身掉电安全）先落
-  // pendingBoot=true。若随后 brownout，标记留在 flash，下次非按键开机即降级；稳定运行
-  // 后由 loop() 清除。
-  prefs.putBool("pendingBoot", true);
 
   // 初始化 BLE 协议栈，并调大 MTU 以提升 OTA 数据传输效率
   BLEDevice::init(bleName.c_str());
@@ -336,13 +333,6 @@ void setup() {
 
 // 主循环：处理延迟重启、串口调试指令、接线测试超时，并渲染当前灯光模式
 void loop() {
-  // 稳定运行超过 BOOT_STABLE_MS，说明已越过 BLE 电流冲击、未被 brownout 打断：清除 pendingBoot
-  // 标记，使下次正常开机不被误判为欠压死循环。bootConfirmed 去重，整段运行只写一次 flash。
-  if (!bootConfirmed && millis() >= BOOT_STABLE_MS) {
-    prefs.putBool("pendingBoot", false);
-    bootConfirmed = true;
-  }
-
   // OTA 升级成功后，延迟重启让状态提示先发送出去
   if (restartAfterOta && millis() >= restartAtMs) {
     ESP.restart();
@@ -420,39 +410,32 @@ void sleepWithGpioWakeup() {
   }
   delay(50);
 
-  // LED 是低电平点亮：睡眠前锁住当前的高电平（熄灯），并让锁定在
-  // deep sleep 期间持续有效。按键唤醒导致 CPU 重新启动时，引脚仍保持熄灯电平。
-  holdLedOutputsOffDuringSleep();
-
   esp_deep_sleep_enable_gpio_wakeup(1ULL << BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
   esp_deep_sleep_start();
 }
 
-// 保持三路 LED 的熄灯电平，跨越 deep sleep 和唤醒复位。
-void holdLedOutputsOffDuringSleep() {
-  gpio_hold_en((gpio_num_t)led_red);
-  gpio_hold_en((gpio_num_t)led_yellow);
-  gpio_hold_en((gpio_num_t)led_green);
-  gpio_deep_sleep_hold_en();
+// 异常复位警告：三色 LED 同闪，区别于任何常规模式，提示"疑似低电/故障，已跳过本次启动"。
+// 用 currentOnValue() 而非 LED_ON，避免用户调低过亮度后这里突然满亮刺眼。
+void blinkLowPowerWarning() {
+  const int blinkCount = 5;
+  const unsigned long blinkIntervalMs = 150;
+  int onValue = currentOnValue();
+
+  for (int i = 0; i < blinkCount; i++) {
+    setLights(onValue, onValue, onValue);
+    delay(blinkIntervalMs);
+    setLights(LED_OFF, LED_OFF, LED_OFF);
+    delay(blinkIntervalMs);
+  }
 }
 
-// setup() 已把三路 LEDC 配成熄灯态后再释放 pad hold，避免释放瞬间跳到低电平。
-void releaseLedOutputHolds() {
-  gpio_hold_dis((gpio_num_t)led_red);
-  gpio_hold_dis((gpio_num_t)led_yellow);
-  gpio_hold_dis((gpio_num_t)led_green);
-  gpio_deep_sleep_hold_dis();
-}
-
-// 判定为欠压死循环（pendingBoot 仍 true 且非按键唤醒，见 setup()）时的降级入口：不初始化
-// BLE、不点任何灯，直接深睡，不返回。刻意「什么都不点」——低电时点灯的电流冲击本身就可能
-// 再次触发 brownout。熄灯睡死后深睡电流极低、电压回升，设备保持关机不再频闪；之后按键唤醒
-// 会跳过本降级、再给一次正常启动的机会，循环被打破。
+// 检测到异常复位（brownout/看门狗/panic）时的安全降级入口：闪警告后直接深度睡眠，
+// 不初始化 BLE，避免再次触发同样的电流冲击型复位。不会返回。
 void enterSafeBootSleep() {
-  Serial.println(">>> 安全降级：疑似欠压死循环，跳过 BLE 初始化，不点灯，直接进入深度睡眠");
+  Serial.println(">>> 安全降级：跳过 BLE 初始化，闪烁警告后进入深度睡眠");
   Serial.flush();
 
-  turnOffLights();
+  blinkLowPowerWarning();
 
   sleepWithGpioWakeup();
 }
