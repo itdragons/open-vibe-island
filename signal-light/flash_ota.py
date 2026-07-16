@@ -146,6 +146,10 @@ async def main():
     parser.add_argument("--device", help="特定蓝牙设备的名称或 MAC 地址过滤条件")
     parser.add_argument("--select", action="store_true", help="强制重新扫描并选择蓝牙设备")
     parser.add_argument("--chunk-size", type=int, default=180, help="分片发送的字节大小 (默认 180)")
+    parser.add_argument("--no-response", action="store_true",
+                        help="用「写-无响应」方式发送数据分片，大幅提速。每 --sync-every 片插入一次带确认写做流控屏障，避免 macOS 丢包")
+    parser.add_argument("--sync-every", type=int, default=16,
+                        help="仅在 --no-response 时生效：每发送 N 片做一次带确认写，强制 CoreBluetooth 排空发送队列 (默认 16，设 0 关闭)")
     args = parser.parse_args()
 
     # 1. Resolve firmware file path
@@ -220,15 +224,26 @@ async def main():
                 return
 
             # 6. Send Chunks
-            print(f"📤 开始传送固件数据分片 (单次分片大小: {args.chunk_size} 字节)...")
+            if args.no_response:
+                mode_desc = f"写-无响应，每 {args.sync_every} 片流控屏障" if args.sync_every > 0 else "写-无响应，无屏障"
+            else:
+                mode_desc = "写-带响应（每片等确认）"
+            print(f"📤 开始传送固件数据分片 (单次分片大小: {args.chunk_size} 字节 | 模式: {mode_desc})...")
             chunk_size = args.chunk_size
             offset = 0
+            chunk_index = 0
             start_time = time.time()
-            
+
             while offset < total_bytes:
                 chunk = firmware_data[offset : offset + chunk_size]
-                # Write chunk to OTA data char
-                await client.write_gatt_char(OTA_DATA_UUID, chunk, response=True)
+                # 写-无响应可流水线发送多片，靠周期性带确认写排空 CoreBluetooth 队列防丢包；
+                # 否则退回逐片带确认写。带确认写还兼作屏障：它等 ATT ack，会强制排空前面同特征的无响应写。
+                if args.no_response:
+                    chunk_index += 1
+                    is_barrier = args.sync_every > 0 and chunk_index % args.sync_every == 0
+                    await client.write_gatt_char(OTA_DATA_UUID, chunk, response=is_barrier)
+                else:
+                    await client.write_gatt_char(OTA_DATA_UUID, chunk, response=True)
                 offset += len(chunk)
                 
                 # Check if there were any failure notifications pushed
