@@ -42,9 +42,16 @@ final class SignalLightFirmwareUpdater {
     @ObservationIgnored private var otaControlCharacteristic: CBCharacteristic?
     @ObservationIgnored private var otaDataCharacteristic: CBCharacteristic?
     @ObservationIgnored private var chunkSize = 180
+    /// Every Nth data chunk is sent write-*with*-response as a flow-control
+    /// barrier: awaiting its ack drains CoreBluetooth's send queue and lets the
+    /// firmware's flash writer catch up, so the fast write-without-response
+    /// chunks in between can't overrun the peripheral. Tuned on real hardware
+    /// (matches the `flash_ota.py` tool's --sync-every default).
+    @ObservationIgnored private let syncEvery = 32
     @ObservationIgnored private var transferTask: Task<Void, Never>?
     @ObservationIgnored private var pendingWrite: (continuation: CheckedContinuation<Void, Error>, timeoutTask: Task<Void, Never>)?
     @ObservationIgnored private var pendingStatus: (continuation: CheckedContinuation<String, Error>, timeoutTask: Task<Void, Never>)?
+    @ObservationIgnored private var pendingReady: (continuation: CheckedContinuation<Void, Error>, timeoutTask: Task<Void, Never>)?
 
     /// Starts flashing `fileURL` to the peripheral. No-ops if a transfer is
     /// already in progress; safe to call again after `.succeeded`/`.failed`.
@@ -68,7 +75,10 @@ final class SignalLightFirmwareUpdater {
 
         self.otaControlCharacteristic = otaControlCharacteristic
         self.otaDataCharacteristic = otaDataCharacteristic
-        chunkSize = max(20, peripheral.maximumWriteValueLength(for: .withResponse))
+        chunkSize = max(20, min(
+            peripheral.maximumWriteValueLength(for: .withoutResponse),
+            peripheral.maximumWriteValueLength(for: .withResponse)
+        ))
         state = .transferring(sent: 0, total: data.count)
 
         transferTask = Task { [weak self] in
@@ -127,6 +137,16 @@ final class SignalLightFirmwareUpdater {
         }
     }
 
+    /// Forwarded from `SignalLightCoordinator.peripheralIsReadyToSendWriteWithoutResponse(_:)`
+    /// — CoreBluetooth signalling that its local send queue drained and it can
+    /// accept more write-without-response chunks.
+    func handleReadyToSendWriteWithoutResponse() {
+        guard let pending = pendingReady else { return }
+        pendingReady = nil
+        pending.timeoutTask.cancel()
+        pending.continuation.resume()
+    }
+
     /// Forwarded from `SignalLightCoordinator.peripheral(_:didUpdateValueFor:error:)`
     /// for the `OTA_CONTROL` characteristic — this is how the firmware reports
     /// `OTA_BEGIN`/`OTA_END` success or failure (see `setOtaStatus` in `led.ino`).
@@ -148,6 +168,11 @@ final class SignalLightFirmwareUpdater {
             pending.timeoutTask.cancel()
             pending.continuation.resume(throwing: error)
         }
+        if let pending = pendingReady {
+            pendingReady = nil
+            pending.timeoutTask.cancel()
+            pending.continuation.resume(throwing: error)
+        }
     }
 
     private func runTransfer(peripheral: CBPeripheral, data: Data) async {
@@ -162,10 +187,20 @@ final class SignalLightFirmwareUpdater {
             }
 
             var offset = 0
+            var chunkIndex = 0
             while offset < data.count {
                 try Task.checkCancellation()
                 let end = min(offset + chunkSize, data.count)
-                try await writeChunkAndAwaitAck(data.subdata(in: offset..<end), on: peripheral)
+                let chunk = data.subdata(in: offset..<end)
+                chunkIndex += 1
+                // Every `syncEvery`th chunk (and always the last) is an acked
+                // write that acts as a flow-control barrier; the rest are fast
+                // write-without-response, paced by `canSendWriteWithoutResponse`.
+                if chunkIndex % syncEvery == 0 || end == data.count {
+                    try await writeChunkAndAwaitAck(chunk, on: peripheral)
+                } else {
+                    try await writeChunkWithoutResponse(chunk, on: peripheral)
+                }
                 offset = end
                 state = .transferring(sent: offset, total: data.count)
             }
@@ -203,6 +238,26 @@ final class SignalLightFirmwareUpdater {
         }
     }
 
+    /// Sends one chunk write-*without*-response. First awaits
+    /// `canSendWriteWithoutResponse` if the local send queue is full, so a chunk
+    /// is never dropped by CoreBluetooth (a silent drop would fail OTA_END).
+    private func writeChunkWithoutResponse(_ chunk: Data, on peripheral: CBPeripheral) async throws {
+        guard let otaDataCharacteristic else {
+            throw SignalLightFirmwareUpdateError.notReady
+        }
+        if !peripheral.canSendWriteWithoutResponse {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                let timeoutTask = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    guard !Task.isCancelled else { return }
+                    self?.timeoutPendingReady()
+                }
+                pendingReady = (continuation, timeoutTask)
+            }
+        }
+        peripheral.writeValue(chunk, for: otaDataCharacteristic, type: .withoutResponse)
+    }
+
     private func sendControlCommandAndAwaitStatus(
         _ text: String,
         on peripheral: CBPeripheral,
@@ -231,6 +286,12 @@ final class SignalLightFirmwareUpdater {
     private func timeoutPendingStatus() {
         guard let pending = pendingStatus else { return }
         pendingStatus = nil
+        pending.continuation.resume(throwing: SignalLightFirmwareUpdateError.timedOut)
+    }
+
+    private func timeoutPendingReady() {
+        guard let pending = pendingReady else { return }
+        pendingReady = nil
         pending.continuation.resume(throwing: SignalLightFirmwareUpdateError.timedOut)
     }
 

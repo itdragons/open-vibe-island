@@ -288,6 +288,12 @@ extension SignalLightCoordinator: CBPeripheralDelegate {
         }
     }
 
+    nonisolated func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
+        MainActor.assumeIsolated {
+            firmwareUpdater.handleReadyToSendWriteWithoutResponse()
+        }
+    }
+
     nonisolated func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: (any Error)?) {
         MainActor.assumeIsolated {
             guard error == nil, let value = characteristic.value, let text = String(data: value, encoding: .utf8) else {
