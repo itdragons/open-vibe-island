@@ -275,7 +275,7 @@
 "settings.signalLight.firmwareChangeFile" = "更换";
 "settings.signalLight.firmwareFlash" = "刷入固件";
 "settings.signalLight.firmwareConfirmTitle" = "确定要刷入固件吗？";
-"settings.signalLight.firmwareConfirmMessage" = "刷写期间请勿断开蓝牙或关闭 App，大约需要 1-3 分钟。";
+"settings.signalLight.firmwareConfirmMessage" = "刷写期间请勿断开蓝牙或关闭 App，大约需要1分钟。";
 "settings.signalLight.firmwareConfirmAction" = "刷入";
 "settings.signalLight.firmwareSucceeded" = "刷写成功，设备正在重启…";
 "settings.signalLight.firmwareFailedPrefix" = "刷写失败：";

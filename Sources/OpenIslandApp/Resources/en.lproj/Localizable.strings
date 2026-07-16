@@ -275,7 +275,7 @@
 "settings.signalLight.firmwareChangeFile" = "Change";
 "settings.signalLight.firmwareFlash" = "Flash Firmware";
 "settings.signalLight.firmwareConfirmTitle" = "Flash this firmware?";
-"settings.signalLight.firmwareConfirmMessage" = "Don't disconnect Bluetooth or quit the app while flashing. This can take 1-3 minutes.";
+"settings.signalLight.firmwareConfirmMessage" = "Don't disconnect Bluetooth or quit the app while flashing. This takes about a minute.";
 "settings.signalLight.firmwareConfirmAction" = "Flash";
 "settings.signalLight.firmwareSucceeded" = "Flashed successfully. Device is restarting…";
 "settings.signalLight.firmwareFailedPrefix" = "Flash failed: ";
