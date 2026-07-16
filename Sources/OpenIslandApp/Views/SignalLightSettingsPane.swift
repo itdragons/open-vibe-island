@@ -557,7 +557,12 @@ struct SignalLightSettingsPane: View {
     private func firmwareProgressRow(sent: Int?, total: Int?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if let sent, let total, total > 0 {
+                // The transfer stalls ~50-80ms every 32 chunks while the flow-
+                // control barrier waits for the firmware to flush flash. Ease the
+                // bar between updates so it glides across those stalls instead of
+                // freezing then jumping.
                 ProgressView(value: Double(sent), total: Double(total))
+                    .animation(.linear(duration: 0.3), value: sent)
                 Text("\(formattedByteCount(sent)) / \(formattedByteCount(total))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
