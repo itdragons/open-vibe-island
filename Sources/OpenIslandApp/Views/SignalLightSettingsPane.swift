@@ -541,11 +541,11 @@ struct SignalLightSettingsPane: View {
                     .foregroundStyle(.secondary)
             }
 
-        case .transferring(let sent, let total):
-            firmwareProgressRow(sent: sent, total: total)
+        case .transferring(let sent, let total, let bytesPerSecond):
+            firmwareProgressRow(sent: sent, total: total, bytesPerSecond: bytesPerSecond)
 
         case .finishing:
-            firmwareProgressRow(sent: nil, total: nil)
+            firmwareProgressRow(sent: nil, total: nil, bytesPerSecond: nil)
 
         case .succeeded:
             Text(lang.t("settings.signalLight.firmwareSucceeded"))
@@ -554,7 +554,7 @@ struct SignalLightSettingsPane: View {
     }
 
     @ViewBuilder
-    private func firmwareProgressRow(sent: Int?, total: Int?) -> some View {
+    private func firmwareProgressRow(sent: Int?, total: Int?, bytesPerSecond: Double?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if let sent, let total, total > 0 {
                 // The transfer stalls ~50-80ms every 32 chunks while the flow-
@@ -563,9 +563,18 @@ struct SignalLightSettingsPane: View {
                 // freezing then jumping.
                 ProgressView(value: Double(sent), total: Double(total))
                     .animation(.linear(duration: 0.3), value: sent)
-                Text("\(formattedByteCount(sent)) / \(formattedByteCount(total))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                // Percentage + running speed rather than a byte count: the speed
+                // keeps moving, so the eye isn't drawn to the periodic stalls.
+                HStack(spacing: 6) {
+                    Text("\(Int(Double(sent) / Double(total) * 100))%")
+                    if let bytesPerSecond, bytesPerSecond > 0 {
+                        Text("·")
+                        Text(formattedSpeed(bytesPerSecond))
+                            .monospacedDigit()
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             } else {
                 ProgressView()
             }
@@ -612,6 +621,10 @@ struct SignalLightSettingsPane: View {
 
     private func formattedByteCount(_ bytes: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
+    private func formattedSpeed(_ bytesPerSecond: Double) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytesPerSecond), countStyle: .file) + "/s"
     }
 
     // MARK: Wiring Calibration

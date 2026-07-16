@@ -5,7 +5,7 @@ import Observation
 /// Progress/outcome of an in-flight (or just-finished) BLE firmware flash.
 enum SignalLightFirmwareUpdateState: Equatable {
     case idle
-    case transferring(sent: Int, total: Int)
+    case transferring(sent: Int, total: Int, bytesPerSecond: Double)
     case finishing
     case succeeded
     case failed(String)
@@ -48,6 +48,9 @@ final class SignalLightFirmwareUpdater {
     /// chunks in between can't overrun the peripheral. Tuned on real hardware
     /// (matches the `flash_ota.py` tool's --sync-every default).
     @ObservationIgnored private let syncEvery = 32
+    /// Set when the data-chunk loop starts, so progress can report a running
+    /// average transfer speed (the handshake before it isn't counted).
+    @ObservationIgnored private var transferStartDate: Date?
     @ObservationIgnored private var transferTask: Task<Void, Never>?
     @ObservationIgnored private var pendingWrite: (continuation: CheckedContinuation<Void, Error>, timeoutTask: Task<Void, Never>)?
     @ObservationIgnored private var pendingStatus: (continuation: CheckedContinuation<String, Error>, timeoutTask: Task<Void, Never>)?
@@ -79,7 +82,7 @@ final class SignalLightFirmwareUpdater {
             peripheral.maximumWriteValueLength(for: .withoutResponse),
             peripheral.maximumWriteValueLength(for: .withResponse)
         ))
-        state = .transferring(sent: 0, total: data.count)
+        state = .transferring(sent: 0, total: data.count, bytesPerSecond: 0)
 
         transferTask = Task { [weak self] in
             await self?.runTransfer(peripheral: peripheral, data: data)
@@ -188,6 +191,7 @@ final class SignalLightFirmwareUpdater {
 
             var offset = 0
             var chunkIndex = 0
+            transferStartDate = Date()
             while offset < data.count {
                 try Task.checkCancellation()
                 let end = min(offset + chunkSize, data.count)
@@ -202,7 +206,9 @@ final class SignalLightFirmwareUpdater {
                     try await writeChunkWithoutResponse(chunk, on: peripheral)
                 }
                 offset = end
-                state = .transferring(sent: offset, total: data.count)
+                let elapsed = Date().timeIntervalSince(transferStartDate ?? Date())
+                let speed = elapsed > 0 ? Double(offset) / elapsed : 0
+                state = .transferring(sent: offset, total: data.count, bytesPerSecond: speed)
             }
 
             state = .finishing
@@ -299,5 +305,6 @@ final class SignalLightFirmwareUpdater {
         otaControlCharacteristic = nil
         otaDataCharacteristic = nil
         transferTask = nil
+        transferStartDate = nil
     }
 }
