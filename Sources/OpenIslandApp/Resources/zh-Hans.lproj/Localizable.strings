@@ -293,6 +293,10 @@
 "settings.signalLight.calibrateNotFoundPrefix" = "未能识别：";
 "settings.signalLight.calibrateRedo" = "重新开始";
 "settings.signalLight.calibrateDone" = "完成";
+"settings.signalLight.polarity" = "LED 接线极性";
+"settings.signalLight.polarityLow" = "低电平点亮";
+"settings.signalLight.polarityHigh" = "高电平点亮";
+"settings.signalLight.calibrateTryOtherPolarity" = "灯一直不亮？试试另一种电平极性";
 "settings.signalLight.lightSection" = "灯光";
 "settings.signalLight.livePreview" = "实时预览";
 "settings.signalLight.lightOff" = "灯已关闭";
