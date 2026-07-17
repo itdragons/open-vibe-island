@@ -438,8 +438,7 @@ struct SignalLightSettingsPane: View {
     private var polarityRow: some View {
         HStack {
             Text(lang.t("settings.signalLight.polarity"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.subheadline)
             Spacer()
             Picker("", selection: Binding(
                 get: { model.signalLight.lastDeviceConfig?.activeHigh ?? false },
@@ -453,6 +452,7 @@ struct SignalLightSettingsPane: View {
                 Text(lang.t("settings.signalLight.polarityHigh")).tag(true)
             }
             .labelsHidden()
+            .focusable(false)
             .frame(width: 160)
         }
         .disabled(isTransferring)
