@@ -27,6 +27,10 @@ String bleName; // 蓝牙广播名称，来自 NVS，或首次上电时用 confi
 
 bool lightOn = true; // 灯光总开关：OFF 命令置为 false，其余命令通常会置为 true
 
+// LED 接线极性：false=低电平点亮（出厂默认，历史机型行为不变），true=高电平点亮。
+// 通过 SETPOLARITY 命令运行时切换并持久化到 NVS，无需重新烧录固件（见 handleSetPolarityCommand）。
+bool ledActiveHigh = false;
+
 // 该 LED 接线为反相逻辑（PWM 数值越小越亮）：
 // LED_ON=0 表示全亮（低电平），LED_OFF=255 表示全灭（高电平）。
 const int LED_ON = 0; // 0 是全亮（低电平）
@@ -235,18 +239,23 @@ void setup() {
   // 写一次（见 enterDeepSleep），这里读回来的是"上次关机时的亮度"，仅作为
   // App 连接前的初始值；App 连接后会立即用 BRIGHTNESS 命令覆盖为它自己的值。
   brightnessPercent = prefs.getInt("brightness", 100);
+  ledActiveHigh = prefs.getBool("ledActiveHigh", false);
   Serial.println("Pins -> R:" + String(led_red) + " Y:" + String(led_yellow) + " G:" + String(led_green));
   Serial.println("BLE name -> " + bleName);
+  Serial.println("Polarity -> " + String(ledActiveHigh ? "HIGH" : "LOW"));
 
-  // 先用数字高电平把三路引脚摁灭，覆盖 configureAllLedChannels 接管前的窗口。
-  // 顺序关键：先 pinMode(OUTPUT) 再 digitalWrite(HIGH)；反过来时引脚仍是 INPUT，
-  // pinMode(OUTPUT) 生效瞬间会输出默认低电平（反相=满亮），造成开机满亮闪。
+  // 先把三路引脚摁灭，覆盖 configureAllLedChannels 接管前的窗口。熄灯电平由
+  // ledActiveHigh 决定：低电平点亮（默认，未跑过 SETPOLARITY 的设备恒为此值）时熄灯电平是
+  // HIGH——与改动前完全一致；高电平点亮时熄灯电平是 LOW。
+  // 顺序关键：先 pinMode(OUTPUT) 再 digitalWrite；反过来时引脚仍是 INPUT，pinMode(OUTPUT)
+  // 生效瞬间会输出默认低电平，若恰好是当前极性下的点亮电平，会造成开机满亮闪。
+  int bootOffLevel = ledActiveHigh ? LOW : HIGH;
   pinMode(led_green, OUTPUT);
-  digitalWrite(led_green, HIGH);
+  digitalWrite(led_green, bootOffLevel);
   pinMode(led_red, OUTPUT);
-  digitalWrite(led_red, HIGH);
+  digitalWrite(led_red, bootOffLevel);
   pinMode(led_yellow, OUTPUT);
-  digitalWrite(led_yellow, HIGH);
+  digitalWrite(led_yellow, bootOffLevel);
 
   // 配置 LEDC 定时器与三路输出反相通道（占空比 0=灭），接管三路引脚
   configureAllLedChannels();
@@ -457,7 +466,7 @@ void enterSafeBootSleep() {
   sleepWithGpioWakeup();
 }
 
-// 把一路 LED 引脚绑定到指定 LEDC 通道并开启输出反相，初始占空比 0（反相后=灭）。
+// 把一路 LED 引脚绑定到指定 LEDC 通道并设置输出反相标志，初始占空比 0（反相后=灭）。
 // 开机与 SETPIN 改引脚都用它。
 void configureLedChannel(int pin, ledc_channel_t channel) {
   ledc_channel_config_t channelConfig = {};
@@ -465,9 +474,12 @@ void configureLedChannel(int pin, ledc_channel_t channel) {
   channelConfig.speed_mode = LED_PWM_MODE;
   channelConfig.channel = channel;
   channelConfig.timer_sel = LED_PWM_TIMER;
-  channelConfig.duty = 0;                 // 反相后 = 高电平 = 灭
+  channelConfig.duty = 0;                 // 灭：具体对应哪个电平由 output_invert 决定
   channelConfig.hpoint = 0;
-  channelConfig.flags.output_invert = 1;
+  // 低电平点亮（默认）需要反相：duty=0 时输出高电平=灭。高电平点亮则不反相，
+  // duty=0 时输出低电平=灭。writeLedChannel()的 duty = PWM_MAX - value 公式对两种
+  // 极性都成立，因此这里是极性生效的唯一位置——上层的亮度/动画代码完全不用感知极性。
+  channelConfig.flags.output_invert = ledActiveHigh ? 0 : 1;
   ledc_channel_config(&channelConfig);
 }
 
@@ -1178,11 +1190,13 @@ void handlePinTestCommand(String cmd) {
 }
 
 // PINTEST 用纯数字 GPIO 点灯（不占用 LEDC 通道）：先 gpio_reset_pin 断开该引脚可能存在的
-// LEDC 绑定（被测引脚可能正是某路 LED 的通道引脚），再按反相逻辑写电平（LOW=亮、HIGH=灭）。
+// LEDC 绑定（被测引脚可能正是某路 LED 的通道引脚），再按极性逻辑写电平。
 void driveTestPin(int pin, bool on) {
   gpio_reset_pin((gpio_num_t)pin);
   pinMode(pin, OUTPUT);
-  digitalWrite(pin, on ? LOW : HIGH);
+  int onLevel = ledActiveHigh ? HIGH : LOW;
+  int offLevel = ledActiveHigh ? LOW : HIGH;
+  digitalWrite(pin, on ? onLevel : offLevel);
 }
 
 // PINTEST 序列超时后自动熄灭测试引脚，并恢复进入测试前的模式与灯光开关状态
