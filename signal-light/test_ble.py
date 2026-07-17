@@ -1,9 +1,14 @@
 import asyncio
 from bleak import BleakScanner, BleakClient
 
-# led.ino 里定义的 UUID 
+# led.ino 里定义的 UUID
 SERVICE_UUID = "77697364-6f6d-6761-7264-656e00000001"
 CMD_CHAR_UUID = "77697364-6f6d-6761-7264-656e00000002"
+OTA_CONTROL_CHAR_UUID = "77697364-6f6d-6761-7264-656e00000003"
+
+
+def _on_ota_notify(_sender, data: bytearray):
+    print(f"\n📟 设备状态: {data.decode('utf-8', errors='replace')}")
 
 COMMAND_HELP = """
 可用指令 (发到 COMMAND characteristic):
@@ -67,6 +72,7 @@ async def main():
 
     try:
         async with BleakClient(selected_device) as client:
+            await client.start_notify(OTA_CONTROL_CHAR_UUID, _on_ota_notify)
             print("✅ 蓝牙连接成功！你可以开始发指令了。")
             print("-" * 40)
             print(COMMAND_HELP)

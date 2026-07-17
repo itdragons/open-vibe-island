@@ -212,17 +212,17 @@ void setup() {
   Serial.println("C3 LED starting...");
   Serial.println("Wakeup cause: " + String(esp_sleep_get_wakeup_cause()));
 
-  // 防欠压死循环：低电时 BLE 初始化的电流冲击会触发 brownout 复位，若每次开机都照常初始化
-  // BLE 就会"复位→BLE→再 brownout"无限循环——灯一直微亮频闪，且走不到 loop() 的按键处理而
-  // 关不了机。判据不用 RTC 变量或复位原因（brownout 时都不可靠：RTC 可能被清、复位原因未必
-  // 归类为 brownout），改用 NVS 持久标记 pendingBoot——它为 true 表示"上次开机跑到了 BLE 却
-  // 没稳定运行就挂了"。本次开机若它仍为 true 且非按键唤醒（即 brownout 自动重启），即判定死
-  // 循环，熄灯直接深睡、保持关机；按键唤醒视为用户主动开机，无条件再给一次机会。
+  // 防欠压死循环：pendingBoot 为 true 表示"上次开机跑到了 BLE 却没稳定运行就挂了"。
+  // 按键唤醒、完全断电重新上电（ESP_RST_POWERON）、纯软件重启（ESP_RST_SW，如 OTA/
+  // 改名后的重启）都视为可信的重试信号，直接放行；只有复位原因不在这个白名单内
+  // （真正的 brownout、崩溃、看门狗超时等）才判定死循环，熄灯直接深睡、保持关机。
   prefs.begin("wglight", false);
   bool pendingBoot = prefs.getBool("pendingBoot", false);
   bool wokenByButton = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_GPIO;
-  bool shouldSafeBoot = pendingBoot && !wokenByButton;
-  Serial.println("Reset reason: " + String(esp_reset_reason()) +
+  esp_reset_reason_t resetReason = esp_reset_reason();
+  bool isTrustedRestart = resetReason == ESP_RST_POWERON || resetReason == ESP_RST_SW;
+  bool shouldSafeBoot = pendingBoot && !wokenByButton && !isTrustedRestart;
+  Serial.println("Reset reason: " + String(resetReason) +
                   ", pendingBoot: " + String(pendingBoot) +
                   ", wokenByButton: " + String(wokenByButton) +
                   (shouldSafeBoot ? " -> safe boot" : ""));
