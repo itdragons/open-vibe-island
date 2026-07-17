@@ -153,6 +153,7 @@ void handlePinTestCommand(String cmd);
 void endPinTestIfExpired(unsigned long nowMs);
 void handleSetNameCommand(String cmd);
 void handleBrightnessCommand(String cmd);
+void handleSetPolarityCommand(String cmd);
 int currentOnValue();
 int scaleToOnValue(int rawValue, int onValue);
 void checkButton();
@@ -792,6 +793,11 @@ void handleCommand(String cmd) {
     return;
   }
 
+  if (cmd.startsWith("SETPOLARITY:")) {
+    handleSetPolarityCommand(cmd);
+    return;
+  }
+
   if (handleModeCommand(cmd)) {
     return;
   }
@@ -1140,7 +1146,8 @@ void sendConfigStatus() {
   String status = "CONFIG:R=" + String(led_red) +
                    ",Y=" + String(led_yellow) +
                    ",G=" + String(led_green) +
-                   ",NAME=" + bleName;
+                   ",NAME=" + bleName +
+                   ",POL=" + (ledActiveHigh ? "HIGH" : "LOW");
   setOtaStatus(status);
 }
 
@@ -1251,4 +1258,32 @@ void handleBrightnessCommand(String cmd) {
 
   int percent = fields[0].toInt();
   brightnessPercent = constrain(percent, 0, 100);
+}
+
+// 切换 LED 接线极性（低电平点亮 / 高电平点亮），持久化到 NVS 并立即生效，无需重启：
+// 重新配置三路 LEDC 通道的 output_invert 即可，同一份亮度/动画代码在两种极性下都正确
+// （见 configureLedChannel 的注释）。
+void handleSetPolarityCommand(String cmd) {
+  // 格式：SETPOLARITY:<LOW|HIGH>
+  String fields[1];
+  if (!splitCommandFields(cmd, ':', fields, 1)) {
+    setOtaStatus("SETPOLARITY failed: malformed command");
+    return;
+  }
+
+  String valueText = fields[0];
+  bool newActiveHigh;
+  if (valueText == "HIGH") {
+    newActiveHigh = true;
+  } else if (valueText == "LOW") {
+    newActiveHigh = false;
+  } else {
+    setOtaStatus("SETPOLARITY failed: unknown value " + valueText);
+    return;
+  }
+
+  ledActiveHigh = newActiveHigh;
+  prefs.putBool("ledActiveHigh", ledActiveHigh);
+  configureAllLedChannels();
+  setOtaStatus("SETPOLARITY ok: " + valueText);
 }
