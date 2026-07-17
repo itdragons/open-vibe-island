@@ -436,18 +436,24 @@ struct SignalLightSettingsPane: View {
 
     @ViewBuilder
     private var polarityRow: some View {
-        Picker(lang.t("settings.signalLight.polarity"), selection: Binding(
-            get: { model.signalLight.lastDeviceConfig?.activeHigh ?? false },
-            set: { newValue in
-                model.signalLight.setLastKnownPolarity(activeHigh: newValue)
-                model.signalLight.sendRaw(SignalLightControlCommand.setPolarity(activeHigh: newValue))
-                model.signalLight.sendRaw(SignalLightControlCommand.getConfig)
+        VStack(spacing: 4) {
+            Text(lang.t("settings.signalLight.polarity"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Picker("", selection: Binding(
+                get: { model.signalLight.lastDeviceConfig?.activeHigh ?? false },
+                set: { newValue in
+                    model.signalLight.setLastKnownPolarity(activeHigh: newValue)
+                    model.signalLight.sendRaw(SignalLightControlCommand.setPolarity(activeHigh: newValue))
+                    model.signalLight.sendRaw(SignalLightControlCommand.getConfig)
+                }
+            )) {
+                Text(lang.t("settings.signalLight.polarityLow")).tag(false)
+                Text(lang.t("settings.signalLight.polarityHigh")).tag(true)
             }
-        )) {
-            Text(lang.t("settings.signalLight.polarityLow")).tag(false)
-            Text(lang.t("settings.signalLight.polarityHigh")).tag(true)
+            .pickerStyle(.segmented)
+            .labelsHidden()
         }
-        .pickerStyle(.segmented)
         .disabled(isTransferring)
     }
 
@@ -727,14 +733,15 @@ struct SignalLightSettingsPane: View {
                 .font(.headline)
 
             if let pin = wizard.currentPin {
+                polarityRow
+
+                Divider()
+
                 Text(lang.t("settings.signalLight.calibrateAsking"))
                     .font(.subheadline)
                 Text("GPIO \(pin)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-
-                polarityRow
-                    .frame(maxWidth: 220)
 
                 HStack(spacing: 8) {
                     Button(lang.t("settings.signalLight.green")) { recordCalibrationObservation(.green) }
