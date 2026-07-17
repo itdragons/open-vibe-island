@@ -350,7 +350,6 @@ struct SignalLightSettingsPane: View {
                                 renameRow
                                 Divider()
                                 firmwareVersionRow
-                                polarityRow
                                 Divider()
                                 firmwareRow
                                 firmwareActionRow
@@ -448,7 +447,8 @@ struct SignalLightSettingsPane: View {
             Text(lang.t("settings.signalLight.polarityLow")).tag(false)
             Text(lang.t("settings.signalLight.polarityHigh")).tag(true)
         }
-        .disabled(isTransferring || model.signalLight.isCalibrating)
+        .pickerStyle(.segmented)
+        .disabled(isTransferring)
     }
 
     /// Combines "check for updates" and "pick a local file to flash" into one
@@ -732,6 +732,9 @@ struct SignalLightSettingsPane: View {
                 Text("GPIO \(pin)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                polarityRow
+                    .frame(maxWidth: 220)
 
                 HStack(spacing: 8) {
                     Button(lang.t("settings.signalLight.green")) { recordCalibrationObservation(.green) }
