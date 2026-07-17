@@ -128,6 +128,16 @@ struct SignalLightControlCommandTests {
         #expect(SignalLightControlCommand.getConfig == "GETCONFIG")
         #expect(SignalLightControlCommand.off == "OFF")
     }
+
+    @Test
+    func encodesSetPolarityLow() {
+        #expect(SignalLightControlCommand.setPolarity(activeHigh: false) == "SETPOLARITY:LOW")
+    }
+
+    @Test
+    func encodesSetPolarityHigh() {
+        #expect(SignalLightControlCommand.setPolarity(activeHigh: true) == "SETPOLARITY:HIGH")
+    }
 }
 
 struct SignalLightConfigDecoderTests {
@@ -156,5 +166,17 @@ struct SignalLightConfigDecoderTests {
     @Test
     func rejectsUnrelatedStatusText() {
         #expect(SignalLightConfigDecoder.decode("SETPIN ok: R=5") == nil)
+    }
+
+    @Test
+    func decodesActiveHighPolarity() {
+        let config = SignalLightConfigDecoder.decode("CONFIG:R=5,Y=6,G=7,NAME=WG-A1B2,POL=HIGH")
+        #expect(config == SignalLightDeviceConfig(pins: [.red: 5, .yellow: 6, .green: 7], name: "WG-A1B2", activeHigh: true))
+    }
+
+    @Test
+    func defaultsToActiveLowWhenPolarityFieldIsAbsent() {
+        let config = SignalLightConfigDecoder.decode("CONFIG:R=5,Y=6,G=7,NAME=WG-A1B2")
+        #expect(config?.activeHigh == false)
     }
 }

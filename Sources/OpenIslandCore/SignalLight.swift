@@ -153,6 +153,10 @@ public enum SignalLightControlCommand {
         "BRIGHTNESS:\(percent)"
     }
 
+    public static func setPolarity(activeHigh: Bool) -> String {
+        "SETPOLARITY:\(activeHigh ? "HIGH" : "LOW")"
+    }
+
     public static let off = "OFF"
 }
 
@@ -160,10 +164,12 @@ public enum SignalLightControlCommand {
 public struct SignalLightDeviceConfig: Equatable, Sendable {
     public var pins: [SignalLightColor: Int]
     public var name: String
+    public var activeHigh: Bool
 
-    public init(pins: [SignalLightColor: Int], name: String) {
+    public init(pins: [SignalLightColor: Int], name: String, activeHigh: Bool = false) {
         self.pins = pins
         self.name = name
+        self.activeHigh = activeHigh
     }
 }
 
@@ -177,6 +183,7 @@ public enum SignalLightConfigDecoder {
 
         var pins: [SignalLightColor: Int] = [:]
         var name: String?
+        var activeHigh = false
 
         for field in line.dropFirst("CONFIG:".count).split(separator: ",") {
             let parts = field.split(separator: "=", maxSplits: 1)
@@ -189,6 +196,7 @@ public enum SignalLightConfigDecoder {
             case "Y": if let pin = Int(value) { pins[.yellow] = pin }
             case "G": if let pin = Int(value) { pins[.green] = pin }
             case "NAME": name = value
+            case "POL": activeHigh = (value == "HIGH")
             default: break
             }
         }
@@ -196,6 +204,6 @@ public enum SignalLightConfigDecoder {
         guard pins.count == 3, let name else {
             return nil
         }
-        return SignalLightDeviceConfig(pins: pins, name: name)
+        return SignalLightDeviceConfig(pins: pins, name: name, activeHigh: activeHigh)
     }
 }
