@@ -296,7 +296,6 @@
 "settings.signalLight.polarity" = "LED Wiring Polarity";
 "settings.signalLight.polarityLow" = "Active-Low";
 "settings.signalLight.polarityHigh" = "Active-High";
-"settings.signalLight.calibrateTryOtherPolarity" = "Light won't turn on? Try the other polarity";
 "settings.signalLight.lightSection" = "Light";
 "settings.signalLight.livePreview" = "Live Preview";
 "settings.signalLight.lightOff" = "Light off";

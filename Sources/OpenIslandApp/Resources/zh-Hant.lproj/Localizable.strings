@@ -295,7 +295,6 @@
 "settings.signalLight.polarity" = "LED 接線極性";
 "settings.signalLight.polarityLow" = "低電平點亮";
 "settings.signalLight.polarityHigh" = "高電平點亮";
-"settings.signalLight.calibrateTryOtherPolarity" = "燈一直不亮？試試另一種電平極性";
 "settings.signalLight.lightSection" = "燈光";
 "settings.signalLight.livePreview" = "即時預覽";
 "settings.signalLight.lightOff" = "燈已關閉";

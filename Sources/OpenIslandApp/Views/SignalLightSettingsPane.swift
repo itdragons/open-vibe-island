@@ -12,7 +12,6 @@ struct SignalLightSettingsPane: View {
     @State private var isShowingRenameReconnectNotice = false
     @State private var wizard: SignalLightCalibrationWizard?
     @State private var lightSwitchWasOnBeforeCalibration = false
-    @State private var calibrationAssumedActiveHigh = false
     @State private var isDeviceManagementExpanded = false
     @State private var testTimeoutTask: Task<Void, Never>?
     @State private var expandedSignalLightBucket: SignalLightBucket?
@@ -350,9 +349,9 @@ struct SignalLightSettingsPane: View {
                             VStack(alignment: .leading, spacing: 10) {
                                 renameRow
                                 Divider()
+                                firmwareVersionRow
                                 polarityRow
                                 Divider()
-                                firmwareVersionRow
                                 firmwareRow
                                 firmwareActionRow
                             }
@@ -366,22 +365,6 @@ struct SignalLightSettingsPane: View {
                 }
             }
         }
-    }
-
-    @ViewBuilder
-    private var polarityRow: some View {
-        Picker(lang.t("settings.signalLight.polarity"), selection: Binding(
-            get: { model.signalLight.lastDeviceConfig?.activeHigh ?? false },
-            set: { newValue in
-                model.signalLight.setLastKnownPolarity(activeHigh: newValue)
-                model.signalLight.sendRaw(SignalLightControlCommand.setPolarity(activeHigh: newValue))
-                model.signalLight.sendRaw(SignalLightControlCommand.getConfig)
-            }
-        )) {
-            Text(lang.t("settings.signalLight.polarityLow")).tag(false)
-            Text(lang.t("settings.signalLight.polarityHigh")).tag(true)
-        }
-        .disabled(isTransferring || model.signalLight.isCalibrating)
     }
 
     private func presentChangelog() {
@@ -450,6 +433,22 @@ struct SignalLightSettingsPane: View {
                 beginCalibration()
             }
         }
+    }
+
+    @ViewBuilder
+    private var polarityRow: some View {
+        Picker(lang.t("settings.signalLight.polarity"), selection: Binding(
+            get: { model.signalLight.lastDeviceConfig?.activeHigh ?? false },
+            set: { newValue in
+                model.signalLight.setLastKnownPolarity(activeHigh: newValue)
+                model.signalLight.sendRaw(SignalLightControlCommand.setPolarity(activeHigh: newValue))
+                model.signalLight.sendRaw(SignalLightControlCommand.getConfig)
+            }
+        )) {
+            Text(lang.t("settings.signalLight.polarityLow")).tag(false)
+            Text(lang.t("settings.signalLight.polarityHigh")).tag(true)
+        }
+        .disabled(isTransferring || model.signalLight.isCalibrating)
     }
 
     /// Combines "check for updates" and "pick a local file to flash" into one
@@ -653,7 +652,6 @@ struct SignalLightSettingsPane: View {
             lightSwitchWasOnBeforeCalibration = model.signalLightEnabled
             model.signalLightEnabled = false
         }
-        calibrationAssumedActiveHigh = model.signalLight.lastDeviceConfig?.activeHigh ?? false
         // Always clear the device before testing (including on "Redo") so a
         // leftover effect — the idle bucket's glow, or the previous run's
         // confirmation cycle — can't be mistaken for the pin under test.
@@ -689,20 +687,6 @@ struct SignalLightSettingsPane: View {
         if finished.unresolvedColors.isEmpty {
             model.signalLight.send(SignalLightEffect(type: .cycle, colors: [.green, .yellow, .red], intervalMs: 200))
         }
-        // Refresh the cached device config so the standalone polarity toggle
-        // reflects the final value immediately, without waiting for a reconnect.
-        model.signalLight.sendRaw(SignalLightControlCommand.getConfig)
-    }
-
-    /// Flips the polarity assumed during calibration and re-tests the current
-    /// candidate pin under it — an escape hatch for when the wrong polarity
-    /// makes every candidate pin look dead. Does not advance the wizard's
-    /// index or touch its recorded mapping.
-    private func tryOtherPolarityDuringCalibration() {
-        guard let pin = wizard?.currentPin else { return }
-        calibrationAssumedActiveHigh.toggle()
-        model.signalLight.sendRaw(SignalLightControlCommand.setPolarity(activeHigh: calibrationAssumedActiveHigh))
-        model.signalLight.sendRaw(SignalLightControlCommand.pinTest(pin: pin, on: true))
     }
 
     private func closeCalibration() {
@@ -748,11 +732,6 @@ struct SignalLightSettingsPane: View {
                     Button(lang.t("settings.signalLight.red")) { recordCalibrationObservation(.red) }
                     Button(lang.t("settings.signalLight.calibrateNothing")) { recordCalibrationObservation(.nothing) }
                 }
-
-                Button(lang.t("settings.signalLight.calibrateTryOtherPolarity")) {
-                    tryOtherPolarityDuringCalibration()
-                }
-                .font(.caption)
 
                 Button(lang.t("settings.general.cancel"), role: .cancel) {
                     cancelCalibration()
