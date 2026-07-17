@@ -684,8 +684,15 @@ struct SignalLightSettingsPane: View {
         for (color, pin) in finished.mapping {
             model.signalLight.sendRaw(SignalLightControlCommand.setPin(color: color, pin: pin))
         }
-        if finished.unresolvedColors.isEmpty {
-            model.signalLight.send(SignalLightEffect(type: .cycle, colors: [.green, .yellow, .red], intervalMs: 200))
+        // Restore the real light state immediately rather than leaving the
+        // device on whatever PINTEST left it showing (typically dark) until
+        // the user notices the "Done" confirmation screen and taps it — that
+        // gap could look indistinguishable from a broken light.
+        if lightSwitchWasOnBeforeCalibration {
+            let bucket = SignalLightBucketResolver.resolve(model.state)
+            model.signalLight.send(model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket))
+        } else {
+            model.signalLight.sendRaw(SignalLightControlCommand.off)
         }
     }
 
