@@ -130,6 +130,17 @@ final class SignalLightCoordinator: NSObject {
         peripheral.writeValue(Data(command.utf8), for: characteristic, type: .withResponse)
     }
 
+    /// Optimistically reflects a polarity change the user just requested, so
+    /// Settings' picker shows the new value immediately instead of holding
+    /// the old one until the `GETCONFIG` sent alongside `SETPOLARITY` round-
+    /// trips back. A no-op if `lastDeviceConfig` hasn't been populated yet
+    /// (e.g. `GETCONFIG` hasn't replied since connecting) — that reply will
+    /// set the real value shortly. The pending `GETCONFIG` still reconciles
+    /// this against the device's actual state right after.
+    func setLastKnownPolarity(activeHigh: Bool) {
+        lastDeviceConfig?.activeHigh = activeHigh
+    }
+
     func beginFirmwareUpdate(fileURL: URL) {
         guard let peripheral = connectedPeripheral,
               let otaControlCharacteristic,

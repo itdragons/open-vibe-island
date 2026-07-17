@@ -373,6 +373,7 @@ struct SignalLightSettingsPane: View {
         Picker(lang.t("settings.signalLight.polarity"), selection: Binding(
             get: { model.signalLight.lastDeviceConfig?.activeHigh ?? false },
             set: { newValue in
+                model.signalLight.setLastKnownPolarity(activeHigh: newValue)
                 model.signalLight.sendRaw(SignalLightControlCommand.setPolarity(activeHigh: newValue))
                 model.signalLight.sendRaw(SignalLightControlCommand.getConfig)
             }
