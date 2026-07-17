@@ -219,6 +219,7 @@ extension SignalLightCoordinator: CBCentralManagerDelegate {
             otaDataCharacteristic = nil
             firmwareVersion = nil
             hardwareID = nil
+            lastDeviceConfig = nil
             firmwareUpdater.handleUnexpectedDisconnect()
             firmwareUpdateChecker.reset()
             status = .disconnected
@@ -279,6 +280,12 @@ extension SignalLightCoordinator: CBPeripheralDelegate {
             if let brightness = currentBrightnessProvider?() {
                 sendRaw(SignalLightControlCommand.brightness(percent: brightness))
             }
+
+            // Polarity is a hardware fact about this specific device (like its pin
+            // mapping), not a user preference like brightness/effect — read it back
+            // from the device rather than pushing a locally-remembered value, so a
+            // stale local default can never overwrite a correct on-device setting.
+            sendRaw(SignalLightControlCommand.getConfig)
         }
     }
 
