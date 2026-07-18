@@ -9,6 +9,9 @@ on:
       version:
         description: 'Version to release, e.g. 1.2.1-dev1 (tag will be wg-v<version>)'
         required: true
+      release_notes:
+        description: 'Release notes, one bullet per line (shown in the in-app update dialog).'
+        required: true
 
 permissions:
   contents: write
@@ -29,7 +32,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             version="${{ github.event.inputs.version }}"
             tag="wg-v${version}"
-            git tag "$tag"
+            git tag -a "$tag" -m "${{ github.event.inputs.release_notes }}"
             git push origin "$tag"
           else
             tag="${GITHUB_REF_NAME}"
@@ -37,6 +40,14 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          # Release notes come from the tag's own annotation (works for both trigger
+          # paths); a lightweight tag yields an empty string, which later steps treat
+          # as "no description" rather than an error.
+          {
+            echo "release_notes<<EOF_RELEASE_NOTES"
+            git for-each-ref "refs/tags/$tag" --format='%(contents)'
+            echo "EOF_RELEASE_NOTES"
+          } >> "$GITHUB_OUTPUT"
           # Single source of truth for the Sparkle zip: the local filename (with spaces)
           # and the appcast enclosure URL (GitHub swaps spaces for periods) are both
           # derived from one name, so they can never drift apart.
@@ -118,6 +129,7 @@ jobs:
       - name: Create GitHub Release (draft)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NOTES: ${{ steps.version.outputs.release_notes }}
         run: |
           tag="${{ steps.version.outputs.tag }}"
           # Delete EVERY pre-existing release for this tag (a re-run, or concurrent
@@ -128,27 +140,39 @@ jobs:
             echo "Deleting existing release $id for $tag"
             gh api -X DELETE "repos/${{ github.repository }}/releases/$id"
           done
+
+          notes_file="$(mktemp)"
+          if [[ -n "$RELEASE_NOTES" ]]; then
+            printf '%s\n\n' "$RELEASE_NOTES" >> "$notes_file"
+          fi
+          printf 'Unsigned/ad-hoc-signed build. Right-click → Open on first launch to bypass Gatekeeper. Please publish this draft promptly — the WG appcast will point at these assets once committed, and in-app "Check for Updates" will 404 until this release is published.\n' >> "$notes_file"
+
           gh release create "$tag" \
             --title "WG Open Island v${{ steps.version.outputs.version }}" \
             --draft \
-            --notes "Unsigned/ad-hoc-signed build. Right-click → Open on first launch to bypass Gatekeeper. Please publish this draft promptly — the WG appcast will point at these assets once committed, and in-app \"Check for Updates\" will 404 until this release is published." \
+            --notes-file "$notes_file" \
             "output/package/WG Open Island-${{ steps.version.outputs.version }}.dmg#WG Open Island-${{ steps.version.outputs.version }}.dmg (macOS, Universal)" \
             "output/package/${{ steps.version.outputs.zip_name }}#${{ steps.version.outputs.zip_name }} (macOS, Universal)"
 
       - name: Update appcast-wg.xml on wg
         if: steps.sparkle_sign.outputs.signed == 'true'
+        env:
+          RELEASE_NOTES: ${{ steps.version.outputs.release_notes }}
         run: |
           cp appcast-wg.xml /tmp/appcast-wg.xml
           git fetch origin wg
           git checkout wg
           git pull --ff-only origin wg
           cp /tmp/appcast-wg.xml appcast-wg.xml
+          notes_file="$(mktemp)"
+          printf '%s' "$RELEASE_NOTES" > "$notes_file"
           zsh scripts/update-appcast-wg.sh \
             "${{ steps.version.outputs.version }}" \
             "${{ github.run_number }}" \
             "${{ steps.sparkle_sign.outputs.ed_signature }}" \
             "${{ steps.sparkle_sign.outputs.length }}" \
-            "${{ steps.version.outputs.zip_url }}"
+            "${{ steps.version.outputs.zip_url }}" \
+            "$notes_file"
           git add appcast-wg.xml
           git commit -m "chore: update appcast-wg.xml for ${{ steps.version.outputs.tag }}"
           git push origin wg
