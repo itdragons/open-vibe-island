@@ -7,6 +7,28 @@
         <language>en</language>
         <!-- Items are added by .github/workflows/wg-release.yml via scripts/update-appcast-wg.sh -->
         <item>
+            <title>Version 1.0.5</title>
+            <sparkle:version>14</sparkle:version>
+            <sparkle:shortVersionString>1.0.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Sat, 18 Jul 2026 05:24:21 +0000</pubDate>
+            <description><![CDATA[
+                <ul>
+                    <li>chore: remove 1.0.5 appcast entry ahead of re-release</li>
+                    <li>Clearing the manually-patched entry so the re-run of wg-release.yml (with</li>
+                    <li>the new auto-populated release notes) inserts a clean single entry instead</li>
+                    <li>of a duplicate.</li>
+                    <li>Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com></li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.5/WG.Open.Island-1.0.5.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="6WGyoCAxyqp1+QEqwLhm1a3uuuU2nyx3SHGCCfwuVEgxoi3ZwFhDmN1FgrC6RAIyeag0pOe5DRMI9TLApzjBAQ=="
+                length="12645099"
+            />
+        </item>
+        <item>
             <title>Version 1.0.4</title>
             <sparkle:version>12</sparkle:version>
             <sparkle:shortVersionString>1.0.4</sparkle:shortVersionString>
