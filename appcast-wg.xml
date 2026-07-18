@@ -13,12 +13,9 @@
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <pubDate>Sat, 18 Jul 2026 04:54:02 +0000</pubDate>
             <description><![CDATA[
-                <h2>Active-High LED Wiring Support</h2>
                 <ul>
-                    <li><b>Feature</b>: Support active-high LED wiring in addition to the existing active-low default; switchable from the wiring-calibration wizard.<br>支持高电平点亮的 LED 接线（此前仅支持低电平点亮默认值）；可在接线校准向导中随时切换。</li>
-                    <li><b>Fix</b>: Firmware no longer misjudges a normal restart (power-cycle or firmware update) as a brownout deathloop.<br>修复固件误判正常重启（断电重连或固件更新）为欠压死循环的问题。</li>
-                    <li><b>Fix</b>: The signal light now restores its real state immediately after wiring calibration finishes, instead of staying dark until you tap Done.<br>修复接线校准完成后灯光需要等待才恢复正常显示的问题，现在校准一结束就会立即恢复。</li>
-                    <li><b>Firmware</b>: ESP32-C3 signal-light firmware updated to 1.3.0 — check for it from Settings &rarr; Signal Light after installing this app update.<br>信号灯固件更新至 1.3.0，安装本次 App 更新后可在设置 &rarr; 信号灯里检查固件更新。</li>
+                    <li>Added active-high LED wiring support for the signal light.<br>新增信号灯高电平点亮 LED 接线支持。</li>
+                    <li>Fixed a firmware issue that could leave wired units stuck unrecoverable after certain restarts.<br>修复了一处可能导致插电款设备重启后卡死无法恢复的固件问题。</li>
                 </ul>
             ]]></description>
             <enclosure
