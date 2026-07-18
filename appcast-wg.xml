@@ -14,8 +14,8 @@
             <pubDate>Sat, 18 Jul 2026 04:54:02 +0000</pubDate>
             <description><![CDATA[
                 <ul>
-                    <li>Added active-high LED wiring support for the signal light.<br>新增信号灯高电平点亮 LED 接线支持。</li>
-                    <li>Fixed a firmware issue that could leave wired units stuck unrecoverable after certain restarts.<br>修复了一处可能导致插电款设备重启后卡死无法恢复的固件问题。</li>
+                    <li>新增信号灯高电平点亮 LED 接线支持。</li>
+                    <li>修复了一处可能导致插电款设备重启后卡死无法恢复的固件问题。</li>
                 </ul>
             ]]></description>
             <enclosure
