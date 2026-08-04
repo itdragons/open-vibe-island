@@ -7,6 +7,28 @@
         <language>en</language>
         <!-- Items are added by .github/workflows/wg-release.yml via scripts/update-appcast-wg.sh -->
         <item>
+            <title>Version 1.0.6</title>
+            <sparkle:version>16</sparkle:version>
+            <sparkle:shortVersionString>1.0.6</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Tue, 04 Aug 2026 10:31:16 +0000</pubDate>
+            <description><![CDATA[
+                <ul>
+                    <li>修复 Codex 会话增量读取的性能与稳定性问题</li>
+                    <li>修复 Kimi Hook 的 TOML 占位符冲突问题</li>
+                    <li>修复多显示器下悬浮窗显示位置识别问题</li>
+                    <li>Hook 标准错误输出现在会静默失败(不阻塞 agent 运行)</li>
+                    <li>修复 OpenCode 无 TTY 场景下的进程检测问题</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.6/WG.Open.Island-1.0.6.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="zo6evgPGkeWaPWzM6owme3prRrS12B0MsdsH9FtdvEz2pRQkOyA/UTCXf4QpA5864+heCTG3pBaTdhZUDZmfDw=="
+                length="12741033"
+            />
+        </item>
+        <item>
             <title>Version 1.0.5</title>
             <sparkle:version>15</sparkle:version>
             <sparkle:shortVersionString>1.0.5</sparkle:shortVersionString>
