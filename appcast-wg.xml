@@ -7,6 +7,26 @@
         <language>en</language>
         <!-- Items are added by .github/workflows/wg-release.yml via scripts/update-appcast-wg.sh -->
         <item>
+            <title>Version 1.0.7</title>
+            <sparkle:version>17</sparkle:version>
+            <sparkle:shortVersionString>1.0.7</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Thu, 10 Sep 2026 10:09:52 +0000</pubDate>
+            <description><![CDATA[
+                <ul>
+                    <li>新增 Grok Build、Pi、Oh My Pi 三个 agent 支持</li>
+                    <li>新增权限待处理时通知栏常驻,以及用量条多窗口展示</li>
+                    <li>修复 Codex 会话解析、多屏显示、悬浮窗点击等多处稳定性问题</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.7/WG.Open.Island-1.0.7.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="r4y5Yhb9gNkDRfJbceGk2Z40Sdgqj2FIN9VbEt9lSDcqXPs7szHoA+Q3ALiBVJ+NVFJouIzriU9hPbadCX3tCQ=="
+                length="13787045"
+            />
+        </item>
+        <item>
             <title>Version 1.0.6</title>
             <sparkle:version>16</sparkle:version>
             <sparkle:shortVersionString>1.0.6</sparkle:shortVersionString>
