@@ -117,7 +117,8 @@ extension AgentSession {
     var spotlightWorkspaceName: String {
         if let workspaceName = jumpTarget?.workspaceName.trimmedForSurface,
            !workspaceName.isEmpty {
-            return workspaceName
+            // Cover already-persisted titles that still contain `\xHH` dumps.
+            return HexEscapedUTF8.decodeIfNeeded(workspaceName)
         }
 
         let trimmedTitle = title.trimmedForSurface
@@ -125,10 +126,10 @@ extension AgentSession {
             String($0).trimmedForSurface
         }
         if pieces.count == 2, !pieces[1].isEmpty {
-            return pieces[1]
+            return HexEscapedUTF8.decodeIfNeeded(pieces[1])
         }
 
-        return trimmedTitle
+        return HexEscapedUTF8.decodeIfNeeded(trimmedTitle)
     }
 
     var spotlightWorktreeBranch: String? {
@@ -168,7 +169,8 @@ extension AgentSession {
     }
 
     var spotlightHeadlineText: String {
-        var headline = spotlightWorkspaceName
+        let workspaceName = spotlightWorkspaceName
+        var headline = workspaceName
 
         if let branch = spotlightWorktreeBranch {
             headline += " (\(branch))"
@@ -176,6 +178,10 @@ extension AgentSession {
 
         guard let prompt = spotlightHeadlinePromptText else {
             return headline
+        }
+
+        guard workspaceName != "/" else {
+            return prompt
         }
 
         return "\(headline) · \(prompt)"
@@ -222,6 +228,12 @@ extension AgentSession {
             return "Cursor"
         case .kimiCLI:
             return "Kimi"
+        case .grokBuild:
+            return "Grok"
+        case .pi:
+            return "Pi"
+        case .ohMyPi:
+            return "Oh My Pi"
         }
     }
 

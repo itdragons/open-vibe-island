@@ -55,6 +55,8 @@ final class ProcessMonitoringCoordinator {
     private static let cursorStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let codexAppStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let conductorStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let piHeartbeatTimeout: TimeInterval = 45
 
     static func monitoringPollInterval(
         isResolvingInitialLiveSessions: Bool,
@@ -175,6 +177,8 @@ final class ProcessMonitoringCoordinator {
                     }
                     hadTrackedLiveSessions = hasTrackedLiveSessions
                 }
+
+                self.expireStalePiHeartbeatSessions()
 
                 let wakeInterval = Self.monitoringWakeInterval(
                     isResolvingInitialLiveSessions: self.isResolvingInitialLiveSessions,
@@ -323,6 +327,19 @@ final class ProcessMonitoringCoordinator {
         onPersistenceNeeded?()
     }
 
+    private func expireStalePiHeartbeatSessions(now: Date = .now) {
+        var local = state
+        let expired = local.expireStalePiHeartbeats(
+            before: now.addingTimeInterval(-Self.piHeartbeatTimeout)
+        )
+        guard !expired.isEmpty else { return }
+
+        _ = local.removeInvisibleSessions()
+        state = local
+        onSessionsReconciled?()
+        onPersistenceNeeded?()
+    }
+
     // MARK: - Event helpers
 
     func markSessionAttached(for event: AgentEvent) {
@@ -364,6 +381,10 @@ final class ProcessMonitoringCoordinator {
         case let .openCodeSessionMetadataUpdated(payload):
             payload.sessionID
         case let .cursorSessionMetadataUpdated(payload):
+            payload.sessionID
+        case let .piSessionMetadataUpdated(payload):
+            payload.sessionID
+        case let .sessionHeartbeat(payload):
             payload.sessionID
         case let .actionableStateResolved(payload):
             payload.sessionID
@@ -509,6 +530,43 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        // Grok sessions are hook-managed. Process discovery sees a `grok`
+        // binary but cannot recover Grok's session UUID from ps/lsof.
+        // Prefer TTY / CWD matches when unique; otherwise use a conservative
+        // fallback (same idea as Kimi): while any Grok process is alive, keep
+        // non-ended Grok sessions in the alive set so the hook-managed
+        // processNotSeenCount path does not kill them after ~6s.
+        // Explicit SessionEnd still wins — ended sessions are skipped here and
+        // ignored by SessionState.markProcessLiveness once isSessionEnded.
+        let grokProcesses = activeProcesses.filter { $0.tool == .grokBuild }
+        let trackedGrokSessions = sessions.filter {
+            $0.tool == .grokBuild && !$0.isDemoSession && !$0.isSessionEnded
+        }
+        var claimedGrokSessionIDs: Set<String> = []
+        var hasUnmatchedGrokProcess = false
+
+        for process in grokProcesses {
+            switch uniqueTrackedGrokSession(
+                for: process,
+                sessions: trackedGrokSessions,
+                claimedSessionIDs: claimedGrokSessionIDs
+            ) {
+            case .matched(let matched):
+                aliveIDs.insert(matched.id)
+                claimedGrokSessionIDs.insert(matched.id)
+            case .ambiguous:
+                hasUnmatchedGrokProcess = true
+            case .rejectedConflict:
+                break
+            }
+        }
+
+        if hasUnmatchedGrokProcess || (!grokProcesses.isEmpty && claimedGrokSessionIDs.isEmpty) {
+            for session in trackedGrokSessions where !claimedGrokSessionIDs.contains(session.id) {
+                aliveIDs.insert(session.id)
+            }
+        }
+
         // Cursor sessions: prefer concrete cursor-agent processes when they
         // are visible (Cursor CLI / integrated terminal), then fall back to
         // app-level liveness for IDE-only hook sessions where there is no
@@ -568,6 +626,31 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        // Conductor sessions: Conductor (conductor.build) runs Claude Code as a
+        // headless, TTY-less subprocess of its own runtime, so ps/lsof discovery
+        // never sees it — exactly like the Claude Desktop case above (#510).
+        // Without an app-level fallback, SessionState.markProcessLiveness would
+        // evict these sessions two polls after they appear.  Keep them alive
+        // while Conductor is running, but let completed sessions expire after a
+        // staleness window (Conductor has no per-session "closed" signal beyond
+        // the SessionEnd hook — mirrors the Claude Desktop handling above).  The
+        // session is identified by the "Conductor" terminalApp tag stamped by
+        // the hook.
+        let isConductorRunning = Self.isConductorAppRunning()
+        if isConductorRunning {
+            for session in sessions
+            where session.tool == .claudeCode
+                && !session.isDemoSession
+                && session.jumpTarget?.terminalApp == "Conductor" {
+                if session.isSessionEnded { continue }
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.conductorStalenessTimeout) < Date.now
+                if !isStale {
+                    aliveIDs.insert(session.id)
+                }
+            }
+        }
+
         // Synthetic sessions: always alive if the process exists.
         let syntheticSessions = sessions.filter { isSyntheticClaudeSession($0) }
         for session in syntheticSessions {
@@ -581,6 +664,59 @@ final class ProcessMonitoringCoordinator {
         case matched(AgentSession)
         case ambiguous
         case rejectedConflict
+    }
+
+    /// Same matching strategy as OpenCode: unique TTY (+ optional CWD check),
+    /// then unique CWD. No blind single-session attach without a signal.
+    private func uniqueTrackedGrokSession(
+        for process: ActiveProcessSnapshot,
+        sessions: [AgentSession],
+        claimedSessionIDs: Set<String>
+    ) -> OpenCodeMatchResult {
+        let unclaimedSessions = sessions.filter { !claimedSessionIDs.contains($0.id) }
+        guard !unclaimedSessions.isEmpty else {
+            return .ambiguous
+        }
+
+        if let terminalTTY = normalizedTTYForMatching(process.terminalTTY) {
+            let candidates = unclaimedSessions.filter {
+                normalizedTTYForMatching($0.jumpTarget?.terminalTTY) == terminalTTY
+            }
+            if candidates.count == 1 {
+                let candidate = candidates[0]
+                if let processCWD = normalizedPathForMatching(process.workingDirectory),
+                   let sessionCWD = normalizedPathForMatching(candidate.jumpTarget?.workingDirectory),
+                   processCWD != sessionCWD {
+                    return .rejectedConflict
+                }
+                return .matched(candidate)
+            }
+            if !candidates.isEmpty {
+                if let processCWD = normalizedPathForMatching(process.workingDirectory) {
+                    let cwdCandidates = candidates.filter {
+                        normalizedPathForMatching($0.jumpTarget?.workingDirectory) == processCWD
+                    }
+                    if cwdCandidates.count == 1 {
+                        return .matched(cwdCandidates[0])
+                    }
+                }
+                return .ambiguous
+            }
+        }
+
+        if let processCWD = normalizedPathForMatching(process.workingDirectory) {
+            let workspaceMatches = unclaimedSessions.filter {
+                normalizedPathForMatching($0.jumpTarget?.workingDirectory) == processCWD
+            }
+            if workspaceMatches.count == 1 {
+                return .matched(workspaceMatches[0])
+            }
+            if !workspaceMatches.isEmpty {
+                return .ambiguous
+            }
+        }
+
+        return .ambiguous
     }
 
     private func uniqueTrackedOpenCodeSession(
@@ -1294,6 +1430,15 @@ final class ProcessMonitoringCoordinator {
         }
     }
 
+    /// Check whether the Conductor app is currently running.  Uses
+    /// `NSWorkspace.shared.runningApplications` for the same reason as
+    /// ``isClaudeDesktopAppRunning()``.
+    static func isConductorAppRunning() -> Bool {
+        NSWorkspace.shared.runningApplications.contains { app in
+            app.bundleIdentifier == "com.conductor.app"
+        }
+    }
+
     private func processIdentityKey(_ process: ActiveProcessSnapshot) -> String {
         [
             process.sessionID,
@@ -1381,6 +1526,8 @@ final class ProcessMonitoringCoordinator {
             return "Windsurf"
         case "trae":
             return "Trae"
+        case "zed":
+            return "Zed"
         // JetBrains family
         case "intellij", "idea":
             return "IntelliJ IDEA"
@@ -1400,6 +1547,8 @@ final class ProcessMonitoringCoordinator {
             return "Rider"
         case "rustrover":
             return "RustRover"
+        case "conductor":
+            return "Conductor"
         default:
             return nil
         }
@@ -1440,6 +1589,12 @@ final class ProcessMonitoringCoordinator {
             return "Cursor \(session.id.prefix(8))"
         case .kimiCLI:
             return "Kimi \(session.id.prefix(8))"
+        case .grokBuild:
+            return "Grok \(session.id.prefix(8))"
+        case .pi:
+            return "Pi \(session.id.prefix(8))"
+        case .ohMyPi:
+            return "Oh My Pi \(session.id.prefix(8))"
         }
     }
 }

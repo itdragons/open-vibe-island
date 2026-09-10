@@ -4,20 +4,25 @@ public enum WorkspaceNameResolver {
     private static let worktreeMarkers = ["/.claude/worktrees/", "/.git/worktrees/"]
 
     public static func workspaceName(for cwd: String) -> String {
-        let url = URL(fileURLWithPath: cwd)
+        // Decode `\xHH` path dumps (non-ASCII cwd) before taking the last
+        // path component so titles show readable text, not byte escapes.
+        let normalizedCWD = HexEscapedUTF8.decodeIfNeeded(cwd)
+        let url = URL(fileURLWithPath: normalizedCWD)
         let path = url.standardizedFileURL.path
 
         for marker in worktreeMarkers {
             if let range = path.range(of: marker) {
                 let projectPath = String(path[path.startIndex..<range.lowerBound])
-                let projectName = URL(fileURLWithPath: projectPath).lastPathComponent
+                let projectName = HexEscapedUTF8.decodeIfNeeded(
+                    URL(fileURLWithPath: projectPath).lastPathComponent
+                )
                 if !projectName.isEmpty {
                     return projectName
                 }
             }
         }
 
-        let name = url.lastPathComponent
+        let name = HexEscapedUTF8.decodeIfNeeded(url.lastPathComponent)
         return name.isEmpty ? "Workspace" : name
     }
 

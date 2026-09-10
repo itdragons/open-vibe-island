@@ -111,6 +111,9 @@ struct AgentSessionPresentationTests {
             (.codebuddy, "CodeBuddy"),
             (.cursor, "Cursor"),
             (.kimiCLI, "Kimi"),
+            (.grokBuild, "Grok"),
+            (.pi, "Pi"),
+            (.ohMyPi, "Oh My Pi"),
         ]
         #expect(expectedNames.map { $0.0.rawValue }.sorted() == AgentTool.allCases.map(\.rawValue).sorted())
 
@@ -211,6 +214,31 @@ struct AgentSessionPresentationTests {
         // Headline uses initial prompt (session topic), prompt line uses latest
         #expect(session.spotlightHeadlineText == "worktree · Start by fixing the island hover behavior.")
         #expect(session.spotlightPromptLineText == "You: Now make the overlay height fit the content.")
+    }
+
+    @Test
+    func headlineOmitsRootWorkspacePlaceholderWhenPromptExists() {
+        let session = AgentSession(
+            id: "codex-root-session",
+            title: "Codex · /",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "/",
+                paneTitle: "Codex",
+                workingDirectory: "/"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                initialUserPrompt: "Fix the session headline."
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "Fix the session headline.")
     }
 
     @Test
@@ -332,5 +360,22 @@ struct AgentSessionPresentationTests {
         #expect(session.spotlightStatusLabel == "Live · Search")
         #expect(session.spotlightSecondaryText == "Running Search")
         #expect(session.displayCurrentToolName == "Search")
+    }
+
+    @Test
+    func hookHealthReportsCarryTheirOwnDisplayName() {
+        // Regression: Settings rendered every non-Claude report as "Codex".
+        #expect(HookHealthCheck.checkClaude().agent == .claude)
+        #expect(HookHealthCheck.checkCodex().agent == .codex)
+        #expect(HookHealthCheck.checkOpenCode().agent == .openCode)
+
+        for agent in HookHealthReport.Agent.allCases {
+            #expect(agent.displayName.isEmpty == false)
+            #expect(HookHealthReport(agent: agent).id == agent)
+        }
+
+        #expect(HookHealthReport.Agent.openCode.displayName == "OpenCode")
+        #expect(Set(HookHealthReport.Agent.allCases.map(\.displayName)).count
+            == HookHealthReport.Agent.allCases.count)
     }
 }

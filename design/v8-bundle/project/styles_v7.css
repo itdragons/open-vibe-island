@@ -240,11 +240,12 @@
 }
 .oi-row .sub .you { color: rgba(241,234,217,0.35); font-family: 'JetBrains Mono', monospace; font-size: 10.5px; }
 
-.oi-row .side { display: flex; align-items: center; gap: 6px; }
+.oi-row .side { display: flex; align-items: center; gap: 6px; min-width: min-content; }
 .oi-badge {
   font-size: 10.5px; padding: 3px 8px; border-radius: 999px;
   background: rgba(255,255,255,0.06); color: rgba(241,234,217,0.7);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .oi-badge.claude { background: rgba(231,167,98,0.13); color: #e7a762; }
 .oi-badge.codex  { background: rgba(140,183,255,0.13); color: #8cb7ff; }

@@ -18,6 +18,9 @@ final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
     private static let showDockIconDefaultsKey = "app.showDockIcon"
     private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
+    /// When true, click-outside does not dismiss the notch while any session
+    /// is waiting for approval or an answer (#547).
+    private static let keepNotchOpenUntilDecisionDefaultsKey = "app.keepNotchOpenUntilDecision"
     private static let islandRightSlotDefaultsKey = "appearance.island.v6.rightSlot"
     private static let islandCenterLabelDefaultsKey = "appearance.island.v6.centerLabel"
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
@@ -133,8 +136,7 @@ final class AppModel {
     var isOpenCodeSetupBusy: Bool { hooks.isOpenCodeSetupBusy }
     var openCodePluginStatusTitle: String { hooks.openCodePluginStatusTitle }
     var openCodePluginStatusSummary: String { hooks.openCodePluginStatusSummary }
-    var claudeHealthReport: HookHealthReport? { hooks.claudeHealthReport }
-    var codexHealthReport: HookHealthReport? { hooks.codexHealthReport }
+    var healthReports: [HookHealthReport] { hooks.healthReports }
     var cursorHooksInstalled: Bool { hooks.cursorHooksInstalled }
     var isCursorHookSetupBusy: Bool { hooks.isCursorHookSetupBusy }
     var cursorHookStatus: CursorHookInstallationStatus? { hooks.cursorHookStatus }
@@ -150,6 +152,17 @@ final class AppModel {
     var kimiHookStatus: KimiHookInstallationStatus? { hooks.kimiHookStatus }
     var kimiHookStatusTitle: String { hooks.kimiHookStatusTitle }
     var kimiHookStatusSummary: String { hooks.kimiHookStatusSummary }
+    var grokHooksInstalled: Bool { hooks.grokHooksInstalled }
+    var isGrokHookSetupBusy: Bool { hooks.isGrokHookSetupBusy }
+    var grokHookStatus: GrokHookInstallationStatus? { hooks.grokHookStatus }
+    var grokHookStatusTitle: String { hooks.grokHookStatusTitle }
+    var grokHookStatusSummary: String { hooks.grokHookStatusSummary }
+    var piExtensionInstalled: Bool { hooks.piExtensionInstalled }
+    var ohMyPiExtensionInstalled: Bool { hooks.ohMyPiExtensionInstalled }
+    var isPiSetupBusy: Bool { hooks.isPiSetupBusy }
+    var isOhMyPiSetupBusy: Bool { hooks.isOhMyPiSetupBusy }
+    var piExtensionStatus: PiExtensionInstallationStatus? { hooks.piExtensionStatus }
+    var ohMyPiExtensionStatus: PiExtensionInstallationStatus? { hooks.ohMyPiExtensionStatus }
     var codexHookStatusTitle: String { hooks.codexHookStatusTitle }
     var codexHookStatusSummary: String { hooks.codexHookStatusSummary }
 
@@ -176,6 +189,9 @@ final class AppModel {
             || hooks.openCodePluginInstalled
             || hooks.geminiHooksInstalled
             || hooks.kimiHooksInstalled
+            || hooks.grokHooksInstalled
+            || hooks.piExtensionInstalled
+            || hooks.ohMyPiExtensionInstalled
     }
     func refreshCodexHookStatus() { hooks.refreshCodexHookStatus() }
     func refreshClaudeHookStatus() { hooks.refreshClaudeHookStatus() }
@@ -206,6 +222,14 @@ final class AppModel {
     func refreshKimiHookStatus() { hooks.refreshKimiHookStatus() }
     func installKimiHooks() { hooks.installKimiHooks() }
     func uninstallKimiHooks() { hooks.uninstallKimiHooks() }
+    func refreshGrokHookStatus() { hooks.refreshGrokHookStatus() }
+    func installGrokHooks() { hooks.installGrokHooks() }
+    func uninstallGrokHooks() { hooks.uninstallGrokHooks() }
+    func refreshPiExtensionStatuses() { hooks.refreshPiExtensionStatuses() }
+    func installPiExtension() { hooks.installPiExtension() }
+    func uninstallPiExtension() { hooks.uninstallPiExtension() }
+    func installOhMyPiExtension() { hooks.installOhMyPiExtension() }
+    func uninstallOhMyPiExtension() { hooks.uninstallOhMyPiExtension() }
     func installClaudeUsageBridge() { hooks.installClaudeUsageBridge() }
     func uninstallClaudeUsageBridge() { hooks.uninstallClaudeUsageBridge() }
     func updateClaudeConfigDirectory(to newDirectory: URL?) { hooks.updateClaudeConfigDirectory(to: newDirectory) }
@@ -257,6 +281,17 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, hapticFeedbackEnabled != oldValue else { return }
             UserDefaults.standard.set(hapticFeedbackEnabled, forKey: Self.hapticFeedbackEnabledDefaultsKey)
+        }
+    }
+    /// Keep the island open until the user acts on a pending approval /
+    /// question surface (Settings → General). Opt-in: permission and
+    /// question cards never auto-collapse, so with this on the only way to
+    /// get rid of one is to answer it — clicking into the terminal to type
+    /// the answer no longer dismisses the card.
+    var keepNotchOpenUntilDecision: Bool = false {
+        didSet {
+            guard hasFinishedInit, keepNotchOpenUntilDecision != oldValue else { return }
+            UserDefaults.standard.set(keepNotchOpenUntilDecision, forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
         }
     }
     var showCodexUsage: Bool = false {
@@ -672,6 +707,7 @@ final class AppModel {
         UserDefaults.standard.register(defaults: [
             Self.showDockIconDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
+            Self.keepNotchOpenUntilDecisionDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
         ])
@@ -679,6 +715,7 @@ final class AppModel {
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
+        keepNotchOpenUntilDecision = UserDefaults.standard.bool(forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
         suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
             showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
@@ -777,6 +814,7 @@ final class AppModel {
             self?.discovery.scheduleClaudeSessionPersistence()
             self?.discovery.scheduleOpenCodeSessionPersistence()
             self?.discovery.scheduleCursorSessionPersistence()
+            self?.discovery.schedulePiSessionPersistence()
         }
         monitoring.onCodexAppRunningChanged = { [weak self] isRunning in
             guard let self else { return }
@@ -1175,7 +1213,9 @@ final class AppModel {
             hooks.refreshClaudeHookStatus()
             hooks.refreshCCForkHookStatuses()
             hooks.refreshOpenCodePluginStatus()
+            hooks.refreshPiExtensionStatuses()
             hooks.refreshCursorHookStatus()
+            hooks.refreshGrokHookStatus()
             hooks.refreshClaudeUsageState()
             hooks.startClaudeUsageMonitoringIfNeeded()
             if showCodexUsage {
@@ -1302,6 +1342,18 @@ final class AppModel {
     func toggleOverlay() { overlay.toggleOverlay() }
     func notchOpen(reason: NotchOpenReason, surface: IslandSurface = .sessionList()) { overlay.notchOpen(reason: reason, surface: surface) }
     func notchClose() { overlay.notchClose() }
+
+    /// Whether click-outside (and similar accidental dismissals) should be
+    /// ignored because a session still needs an approve/deny or answer.
+    var shouldBlockDismissWhileAwaitingDecision: Bool {
+        guard keepNotchOpenUntilDecision else { return false }
+        guard notchStatus == .opened else { return false }
+        // Only sessions the island actually shows can pin it open; a hidden
+        // subagent waiting on its parent must not block dismissal.
+        return surfacedSessions.contains { session in
+            session.phase.requiresAttention
+        }
+    }
     func notchPop() { overlay.notchPop() }
     func performBootAnimation() { overlay.performBootAnimation() }
     func ensureOverlayPanel() { overlay.ensureOverlayPanel() }
@@ -1565,6 +1617,11 @@ final class AppModel {
         updateLastActionMessage: Bool = true,
         ingress: TrackedEventIngress = .bridge
     ) {
+        if case .sessionHeartbeat = event {
+            state.apply(event)
+            return
+        }
+
         // Snapshot whether this session was already completed before applying
         // the event. Used to suppress duplicate/stale completion notifications
         // (e.g. rollout watcher re-discovering an old completion on startup,
@@ -1598,6 +1655,7 @@ final class AppModel {
         discovery.scheduleClaudeSessionPersistence()
         discovery.scheduleOpenCodeSessionPersistence()
         discovery.scheduleCursorSessionPersistence()
+        discovery.schedulePiSessionPersistence()
 
         // Push relevant events to the Watch/iPhone via the relay
         if let relay = watchRelay {
@@ -1614,6 +1672,8 @@ final class AppModel {
                 case let .geminiSessionMetadataUpdated(p): return p.sessionID
                 case let .openCodeSessionMetadataUpdated(p): return p.sessionID
                 case let .cursorSessionMetadataUpdated(p): return p.sessionID
+                case let .piSessionMetadataUpdated(p): return p.sessionID
+                case let .sessionHeartbeat(p): return p.sessionID
                 case let .actionableStateResolved(p): return p.sessionID
                 }
             }()
@@ -1708,40 +1768,50 @@ final class AppModel {
         hooks.updateHooksBinaryIfNeeded()
 
         // Auto-install missing hooks and usage bridge, then run health checks.
-        if payload.hooksBinaryURL != nil {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+        let hooksBinaryLocated = payload.hooksBinaryURL != nil
+        Task { @MainActor [weak self] in
+            guard let self else { return }
 
-                // Wait for all status reads to complete before checking install state.
-                await self.hooks.refreshAllHookStatusAndWait()
+            // Wait for all status reads to complete before checking install state.
+            await self.hooks.refreshAllHookStatusAndWait()
 
-                // Reconcile persisted intent with what is actually on disk. For
-                // legacy users this records existing hooks as `.installed` and
-                // marks first-launch as complete so onboarding does not appear
-                // on upgrade. Must run after status reads and before any
-                // install decision.
-                self.hooks.migrateIntentStoreIfNeeded()
+            // Reconcile persisted intent with what is actually on disk. For
+            // legacy users this records existing hooks as `.installed` and
+            // marks first-launch as complete so onboarding does not appear
+            // on upgrade. Must run after status reads and before any
+            // install decision.
+            self.hooks.migrateIntentStoreIfNeeded()
 
-                // Install only hooks the user has not explicitly opted out of.
-                // `shouldAutoInstall` skips `.uninstalled` agents and agents
-                // whose hooks are already present — it is the single checkpoint
-                // that fixes #324.
-                if self.hooks.shouldAutoInstall(.claudeCode) { self.installClaudeHooks() }
-                if self.hooks.shouldAutoInstall(.codex) { self.installCodexHooks() }
-                if self.hooks.shouldAutoInstall(.qoder) { self.installQoderHooks() }
-                if self.hooks.shouldAutoInstall(.qwenCode) { self.installQwenCodeHooks() }
-                if self.hooks.shouldAutoInstall(.factory) { self.installFactoryHooks() }
-                if self.hooks.shouldAutoInstall(.codebuddy) { self.installCodebuddyHooks() }
-                if self.hooks.shouldAutoInstall(.openCode) { self.installOpenCodePlugin() }
-                if self.hooks.shouldAutoInstall(.cursor) { self.installCursorHooks() }
-                if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }
-                if self.hooks.shouldAutoInstall(.kimi) { self.installKimiHooks() }
-                if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
+            // Pi and Oh My Pi load a runtime extension that talks to the
+            // bridge socket directly, so they do not depend on the hooks
+            // binary and are installed whether or not it was located.
+            if self.hooks.shouldAutoInstall(.pi) { self.installPiExtension() }
+            if self.hooks.shouldAutoInstall(.ohMyPi) { self.installOhMyPiExtension() }
 
-                // Run health checks after install to detect stale paths, conflicts, etc.
-                try? await Task.sleep(for: .milliseconds(500))
-                await self.hooks.repairHooksIfNeeded()
-            }
+            // Everything below writes the hooks binary path into agent
+            // config, so it only runs once the binary has been located.
+            guard hooksBinaryLocated else { return }
+
+            // Install only hooks the user has not explicitly opted out of.
+            // `shouldAutoInstall` skips `.uninstalled` agents and agents
+            // whose hooks are already present — it is the single checkpoint
+            // that fixes #324.
+            if self.hooks.shouldAutoInstall(.claudeCode) { self.installClaudeHooks() }
+            if self.hooks.shouldAutoInstall(.codex) { self.installCodexHooks() }
+            if self.hooks.shouldAutoInstall(.qoder) { self.installQoderHooks() }
+            if self.hooks.shouldAutoInstall(.qwenCode) { self.installQwenCodeHooks() }
+            if self.hooks.shouldAutoInstall(.factory) { self.installFactoryHooks() }
+            if self.hooks.shouldAutoInstall(.codebuddy) { self.installCodebuddyHooks() }
+            if self.hooks.shouldAutoInstall(.openCode) { self.installOpenCodePlugin() }
+            if self.hooks.shouldAutoInstall(.cursor) { self.installCursorHooks() }
+            if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }
+            if self.hooks.shouldAutoInstall(.kimi) { self.installKimiHooks() }
+            if self.hooks.shouldAutoInstall(.grok) { self.installGrokHooks() }
+            if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
+
+            // Run health checks after install to detect stale paths, conflicts, etc.
+            try? await Task.sleep(for: .milliseconds(500))
+            await self.hooks.repairHooksIfNeeded()
         }
 
         // Reconcile attachments and start monitoring (requires sessions to be loaded).
@@ -1891,6 +1961,13 @@ final class AppModel {
             }
 
             return payload.cursorMetadata.lastAssistantMessage ?? "Cursor session metadata updated."
+        case let .piSessionMetadataUpdated(payload):
+            if let currentTool = payload.piMetadata.currentTool {
+                return "\(state.session(id: payload.sessionID)?.tool.displayName ?? "Pi") is running \(currentTool)."
+            }
+            return payload.piMetadata.lastAssistantMessage ?? "Pi session metadata updated."
+        case let .sessionHeartbeat(payload):
+            return "Heartbeat received for session \(payload.sessionID)."
         case let .actionableStateResolved(payload):
             return "Actionable state resolved for session \(payload.sessionID)."
         }

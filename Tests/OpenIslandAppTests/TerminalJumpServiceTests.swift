@@ -1,9 +1,10 @@
-import XCTest
+import Foundation
+import Testing
 @testable import OpenIslandApp
 import OpenIslandCore
-import Foundation
 
-final class TerminalJumpServiceTests: XCTestCase {
+@Suite(.serialized)
+struct TerminalJumpServiceTests {
     private final class OpenedArgumentsBox: @unchecked Sendable {
         var values: [[String]] = []
     }
@@ -12,7 +13,8 @@ final class TerminalJumpServiceTests: XCTestCase {
         var values: [(String, [String])] = []
     }
 
-    func testGhosttyJumpScriptActivatesWindowAndRetriesFocusUntilItSticks() {
+    @Test
+    func ghosttyJumpScriptActivatesWindowAndRetriesFocusUntilItSticks() {
         let target = JumpTarget(
             terminalApp: "Ghostty",
             workspaceName: "open-island",
@@ -23,20 +25,21 @@ final class TerminalJumpServiceTests: XCTestCase {
 
         let script = TerminalJumpService().ghosttyJumpScript(for: target)
 
-        XCTAssertTrue(script.contains("activate"))
-        XCTAssertTrue(script.contains("activate window targetWindow"))
-        XCTAssertTrue(script.contains("select tab targetTab"))
-        XCTAssertTrue(script.contains("focus targetTerminal"))
-        XCTAssertTrue(script.contains("repeat 3 times"))
-        XCTAssertTrue(script.contains("delay 0.04"))
-        XCTAssertTrue(script.contains("delay 0.08"))
-        XCTAssertTrue(script.contains("focused terminal of selected tab of front window"))
-        XCTAssertTrue(script.contains("repeat with aWindow in windows"))
-        XCTAssertTrue(script.contains("repeat with aTab in tabs of aWindow"))
-        XCTAssertTrue(script.contains("repeat with aTerminal in terminals of aTab"))
+        #expect(script.contains("activate"))
+        #expect(script.contains("activate window targetWindow"))
+        #expect(script.contains("select tab targetTab"))
+        #expect(script.contains("focus targetTerminal"))
+        #expect(script.contains("repeat 3 times"))
+        #expect(script.contains("delay 0.04"))
+        #expect(script.contains("delay 0.08"))
+        #expect(script.contains("focused terminal of selected tab of front window"))
+        #expect(script.contains("repeat with aWindow in windows"))
+        #expect(script.contains("repeat with aTab in tabs of aWindow"))
+        #expect(script.contains("repeat with aTerminal in terminals of aTab"))
     }
 
-    func testGhosttyJumpScriptFallsBackToWorkingDirectoryAndTitle() {
+    @Test
+    func ghosttyJumpScriptFallsBackToWorkingDirectoryAndTitle() {
         let target = JumpTarget(
             terminalApp: "Ghostty",
             workspaceName: "open-island",
@@ -46,19 +49,20 @@ final class TerminalJumpServiceTests: XCTestCase {
 
         let script = TerminalJumpService().ghosttyJumpScript(for: target)
 
-        XCTAssertTrue(script.contains("(working directory of aTerminal as text) is \"/Users/wangruobing/Personal/open-island\""))
-        XCTAssertTrue(script.contains("(name of aTerminal as text) contains \"codex ~/p/open-island\""))
-        XCTAssertTrue(script.contains("if \"\" is \"\" then"))
+        #expect(script.contains("(working directory of aTerminal as text) is \"/Users/wangruobing/Personal/open-island\""))
+        #expect(script.contains("(name of aTerminal as text) contains \"codex ~/p/open-island\""))
+        #expect(script.contains("if \"\" is \"\" then"))
     }
 
-    func testGhosttyJumpIntegrationMatchesFocusedTerminalForLiveSurfaces() throws {
+    @Test
+    func ghosttyJumpIntegrationMatchesFocusedTerminalForLiveSurfaces() throws {
         guard ProcessInfo.processInfo.environment["OPEN_ISLAND_RUN_GHOSTTY_JUMP_INTEGRATION"] == "1" else {
-            throw XCTSkip("Set OPEN_ISLAND_RUN_GHOSTTY_JUMP_INTEGRATION=1 to run live Ghostty jump verification.")
+            try Test.cancel("Set OPEN_ISLAND_RUN_GHOSTTY_JUMP_INTEGRATION=1 to run live Ghostty jump verification.")
         }
 
         let terminals = try liveGhosttyTerminals()
         if terminals.isEmpty {
-            throw XCTSkip("No live Ghostty terminals were found.")
+            try Test.cancel("No live Ghostty terminals were found.")
         }
 
         let service = TerminalJumpService()
@@ -87,14 +91,15 @@ final class TerminalJumpServiceTests: XCTestCase {
                 Thread.sleep(forTimeInterval: 0.25)
             }
 
-            XCTAssertTrue(
+            #expect(
                 matched,
                 "Ghostty jump did not settle on \(terminal.id). lastResult=\(lastResult) lastFocusedID=\(lastFocusedID)"
             )
         }
     }
 
-    func testGhosttyJumpDoesNotOpenNewTabWhenPreciseTargetMissesInRunningApp() throws {
+    @Test
+    func ghosttyJumpDoesNotOpenNewTabWhenPreciseTargetMissesInRunningApp() throws {
         let openedArguments = OpenedArgumentsBox()
         let service = TerminalJumpService(
             applicationResolver: { bundleIdentifier in
@@ -119,11 +124,12 @@ final class TerminalJumpServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(result, "Activated Ghostty. Exact pane targeting could not find the live terminal.")
-        XCTAssertEqual(openedArguments.values, [["-b", "com.mitchellh.ghostty"]])
+        #expect(result == "Activated Ghostty. Exact pane targeting could not find the live terminal.")
+        #expect(openedArguments.values == [["-b", "com.mitchellh.ghostty"]])
     }
 
-    func testCursorJumpActivatesRunningAppWithoutWorkspaceReuse() throws {
+    @Test
+    func cursorJumpActivatesRunningAppWithoutWorkspaceReuse() throws {
         let openedArguments = OpenedArgumentsBox()
         let service = TerminalJumpService(
             applicationResolver: { bundleIdentifier in
@@ -148,11 +154,12 @@ final class TerminalJumpServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(result, "Activated Cursor.")
-        XCTAssertEqual(openedArguments.values, [["-b", "com.todesktop.230313mzl4w4u92"]])
+        #expect(result == "Activated Cursor.")
+        #expect(openedArguments.values == [["-b", "com.todesktop.230313mzl4w4u92"]])
     }
 
-    func testCursorJumpFallsBackToWorkspaceWhenAppNotRunning() throws {
+    @Test
+    func cursorJumpFallsBackToWorkspaceWhenAppNotRunning() throws {
         let openedArguments = OpenedArgumentsBox()
         let service = TerminalJumpService(
             applicationResolver: { bundleIdentifier in
@@ -175,11 +182,12 @@ final class TerminalJumpServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(result, "Focused the matching Cursor workspace.")
-        XCTAssertTrue(openedArguments.values.isEmpty)
+        #expect(result == "Focused the matching Cursor workspace.")
+        #expect(openedArguments.values.isEmpty)
     }
 
-    func testWarpJumpReturnsImmediatelyWhenAlreadyOnTargetPane() throws {
+    @Test
+    func warpJumpReturnsImmediatelyWhenAlreadyOnTargetPane() throws {
         let openedArguments = OpenedArgumentsBox()
         let keystroker = KeystrokeInjectorSpy()
         let targetUUID = "D1A5DF3027E44FC080FE2656FAF2BA2E"
@@ -207,12 +215,13 @@ final class TerminalJumpServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(result, "Focused the matching Warp tab.")
-        XCTAssertEqual(keystroker.callCount, 0)
-        XCTAssertEqual(openedArguments.values, [["-b", "dev.warp.Warp-Stable"]])
+        #expect(result == "Focused the matching Warp tab.")
+        #expect(keystroker.callCount == 0)
+        #expect(openedArguments.values == [["-b", "dev.warp.Warp-Stable"]])
     }
 
-    func testWarpJumpCyclesThroughTabsUntilTargetIsFocused() throws {
+    @Test
+    func warpJumpCyclesThroughTabsUntilTargetIsFocused() throws {
         let openedArguments = OpenedArgumentsBox()
         let keystroker = KeystrokeInjectorSpy()
         let targetUUID = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
@@ -247,12 +256,13 @@ final class TerminalJumpServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(result, "Focused the matching Warp tab.")
-        XCTAssertEqual(keystroker.callCount, 2)
-        XCTAssertEqual(openedArguments.values, [["-b", "dev.warp.Warp-Stable"]])
+        #expect(result == "Focused the matching Warp tab.")
+        #expect(keystroker.callCount == 2)
+        #expect(openedArguments.values == [["-b", "dev.warp.Warp-Stable"]])
     }
 
-    func testWarpJumpCapsOutAfterTabCountPlusTwoAndReturnsBestEffortMessage() throws {
+    @Test
+    func warpJumpCapsOutAfterTabCountPlusTwoAndReturnsBestEffortMessage() throws {
         let keystroker = KeystrokeInjectorSpy()
         let service = TerminalJumpService(
             applicationResolver: { id in
@@ -277,11 +287,12 @@ final class TerminalJumpServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(result, "Activated Warp but could not confirm precision focus.")
-        XCTAssertEqual(keystroker.callCount, 5)  // tabCount (3) + 2
+        #expect(result == "Activated Warp but could not confirm precision focus.")
+        #expect(keystroker.callCount == 5)  // tabCount (3) + 2
     }
 
-    func testWarpJumpWithNilWarpPaneUUIDFallsBackToAppActivation() throws {
+    @Test
+    func warpJumpWithNilWarpPaneUUIDFallsBackToAppActivation() throws {
         let keystroker = KeystrokeInjectorSpy()
         let openedArguments = OpenedArgumentsBox()
         let service = TerminalJumpService(
@@ -307,12 +318,13 @@ final class TerminalJumpServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(result, "Activated Warp. No precise pane mapping available.")
-        XCTAssertEqual(keystroker.callCount, 0)
-        XCTAssertEqual(openedArguments.values, [["-b", "dev.warp.Warp-Stable"]])
+        #expect(result == "Activated Warp. No precise pane mapping available.")
+        #expect(keystroker.callCount == 0)
+        #expect(openedArguments.values == [["-b", "dev.warp.Warp-Stable"]])
     }
 
-    func testUnknownTerminalAppFallsBackToFinderInsteadOfFirstInstalledTerminal() throws {
+    @Test
+    func unknownTerminalAppFallsBackToFinderInsteadOfFirstInstalledTerminal() throws {
         let openedArguments = OpenedArgumentsBox()
         // Pretend iTerm is installed. Without the "unknown" guard in
         // resolveTerminalApp, the silent "first installed known app" fallback
@@ -338,14 +350,15 @@ final class TerminalJumpServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(openedArguments.values, [["/tmp"]])
-        XCTAssertTrue(
+        #expect(openedArguments.values == [["/tmp"]])
+        #expect(
             result.contains("Finder"),
             "Expected Finder fallback, got: \(result)"
         )
     }
 
-    func testTraeJumpActivatesRunningTraeCNApp() throws {
+    @Test
+    func traeJumpActivatesRunningTraeCNApp() throws {
         let openedArguments = OpenedArgumentsBox()
         let service = TerminalJumpService(
             applicationResolver: { bundleIdentifier in
@@ -369,11 +382,12 @@ final class TerminalJumpServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(result, "Activated Trae.")
-        XCTAssertEqual(openedArguments.values, [["-b", "cn.trae.app"]])
+        #expect(result == "Activated Trae.")
+        #expect(openedArguments.values == [["-b", "cn.trae.app"]])
     }
 
-    func testTraeCNJumpPrefersCNBundleWhenBothTraeVariantsExist() throws {
+    @Test
+    func traeCNJumpPrefersCNBundleWhenBothTraeVariantsExist() throws {
         let openedArguments = OpenedArgumentsBox()
         let service = TerminalJumpService(
             applicationResolver: { bundleIdentifier in
@@ -403,11 +417,12 @@ final class TerminalJumpServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(result, "Activated Trae. Exact pane targeting is still best-effort.")
-        XCTAssertEqual(openedArguments.values, [["-b", "cn.trae.app"]])
+        #expect(result == "Activated Trae. Exact pane targeting is still best-effort.")
+        #expect(openedArguments.values == [["-b", "cn.trae.app"]])
     }
 
-    func testCodexAppJumpActivatesCodexDesktopApp() throws {
+    @Test
+    func codexAppJumpActivatesCodexDesktopApp() throws {
         let openedArguments = OpenedArgumentsBox()
         let service = TerminalJumpService(
             applicationResolver: { bundleIdentifier in
@@ -431,11 +446,12 @@ final class TerminalJumpServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(result, "Activated Codex.app.")
-        XCTAssertEqual(openedArguments.values, [["-b", "com.openai.codex"]])
+        #expect(result == "Activated Codex.app.")
+        #expect(openedArguments.values == [["-b", "com.openai.codex"]])
     }
 
-    func testCodexAppJumpOpensSpecificThreadWhenThreadIDProvided() throws {
+    @Test
+    func codexAppJumpOpensSpecificThreadWhenThreadIDProvided() throws {
         let openedArguments = OpenedArgumentsBox()
         let service = TerminalJumpService(
             applicationResolver: { bundleIdentifier in
@@ -461,11 +477,12 @@ final class TerminalJumpServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(result, "Focused the Codex.app conversation.")
-        XCTAssertEqual(openedArguments.values, [["codex://threads/\(threadID)"]])
+        #expect(result == "Focused the Codex.app conversation.")
+        #expect(openedArguments.values == [["codex://threads/\(threadID)"]])
     }
 
-    func testTraeCNJumpFallsBackToWorkspaceViaTraeCLI() throws {
+    @Test
+    func traeCNJumpFallsBackToWorkspaceViaTraeCLI() throws {
         let openedArguments = OpenedArgumentsBox()
         let processInvocations = ProcessInvocationBox()
         let service = TerminalJumpService(
@@ -492,11 +509,11 @@ final class TerminalJumpServiceTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(result, "Focused the matching Trae workspace.")
-        XCTAssertTrue(openedArguments.values.isEmpty)
-        XCTAssertEqual(processInvocations.values.count, 1)
-        XCTAssertEqual(processInvocations.values.first?.0, "trae")
-        XCTAssertEqual(processInvocations.values.first?.1, ["-r", "/Users/test/open-vibe-island"])
+        #expect(result == "Focused the matching Trae workspace.")
+        #expect(openedArguments.values.isEmpty)
+        #expect(processInvocations.values.count == 1)
+        #expect(processInvocations.values.first?.0 == "trae")
+        #expect(processInvocations.values.first?.1 == ["-r", "/Users/test/open-vibe-island"])
     }
 }
 
@@ -585,8 +602,12 @@ private func runAppleScript(_ script: String) throws -> String {
     guard task.terminationStatus == 0 else {
         let stderr = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        XCTFail(stderr.isEmpty ? "AppleScript command failed." : stderr)
-        throw NSError(domain: "TerminalJumpServiceTests", code: Int(task.terminationStatus))
+        let message = stderr.isEmpty ? "AppleScript command failed." : stderr
+        throw NSError(
+            domain: "TerminalJumpServiceTests",
+            code: Int(task.terminationStatus),
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
     }
 
     return output

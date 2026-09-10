@@ -1,9 +1,11 @@
-import XCTest
+import Testing
 @testable import OpenIslandApp
 import OpenIslandCore
 
-final class ForegroundTerminalSessionProbeTests: XCTestCase {
-    func testMatchesGhosttyFrontmostTerminalBySessionID() async {
+@Suite(.serialized)
+struct ForegroundTerminalSessionProbeTests {
+    @Test
+    func matchesGhosttyFrontmostTerminalBySessionID() async {
         let probe = ForegroundTerminalSessionProbe(
             frontmostBundleIdentifierProvider: { "com.mitchellh.ghostty" },
             appleScriptRunner: { _ in "ghostty-frontmost" }
@@ -18,10 +20,11 @@ final class ForegroundTerminalSessionProbeTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(matches)
+        #expect(matches)
     }
 
-    func testMatchesTerminalFrontmostTabByTTY() async {
+    @Test
+    func matchesTerminalFrontmostTabByTTY() async {
         let probe = ForegroundTerminalSessionProbe(
             frontmostBundleIdentifierProvider: { "com.apple.Terminal" },
             appleScriptRunner: { _ in "ttys001" }
@@ -36,10 +39,11 @@ final class ForegroundTerminalSessionProbeTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(matches)
+        #expect(matches)
     }
 
-    func testMatchesITermFrontmostSessionByTTYFallback() async {
+    @Test
+    func matchesITermFrontmostSessionByTTYFallback() async {
         let probe = ForegroundTerminalSessionProbe(
             frontmostBundleIdentifierProvider: { "com.googlecode.iterm2" },
             appleScriptRunner: { _ in "different-session\u{1f}/dev/ttys002" }
@@ -55,10 +59,11 @@ final class ForegroundTerminalSessionProbeTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(matches)
+        #expect(matches)
     }
 
-    func testReturnsFalseForUnsupportedFrontmostApp() async {
+    @Test
+    func returnsFalseForUnsupportedFrontmostApp() async {
         let probe = ForegroundTerminalSessionProbe(
             frontmostBundleIdentifierProvider: { "com.example.Editor" },
             appleScriptRunner: { _ in "" }
@@ -73,6 +78,6 @@ final class ForegroundTerminalSessionProbeTests: XCTestCase {
             )
         )
 
-        XCTAssertFalse(matches)
+        #expect(!matches)
     }
 }

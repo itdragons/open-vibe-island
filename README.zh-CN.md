@@ -50,9 +50,9 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 
 ## 支持的 Agents 和终端
 
-**10 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Kimi CLI、OpenCode、Qoder、Qwen Code、Factory、CodeBuddy
+**13 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Grok Build、Kimi CLI、OpenCode、Pi、Oh My Pi、Qoder、Qwen Code、Factory、CodeBuddy
 
-**15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Kaku、VS Code、Cursor、Windsurf、Trae、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
+**15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Kaku、VS Code、Cursor、Windsurf、Trae、Zed、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
 
 <details>
 <summary>完整兼容列表</summary>
@@ -72,6 +72,9 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **Cursor** | 已支持 | Hook 集成，通过 `~/.cursor/hooks.json` 配置，会话追踪，工作区跳转 |
 | **Gemini CLI** | 已支持 | Hook 集成，通过 `~/.gemini/settings.json` 配置，会话追踪，fire-and-forget 事件 |
 | **Kimi CLI** | 已支持 | Hook 集成，通过 `~/.kimi/config.toml` 的 `[[hooks]]` 数组配置，会话追踪，复用 Claude payload 协议 |
+| **Grok Build** | 已支持 | Hook 集成，写入 `~/.grok/hooks/open-island.json`，会话追踪与终端跳回，fire-and-forget 事件（暂无权限拦截；camelCase payload） |
+| **Pi** | 已支持 | TypeScript 扩展，位于 `~/.pi/agent/extensions/open-island.ts`，会话/提示词/工具/完成事件追踪，进程检测，会话持久化，终端跳转 |
+| **Oh My Pi (OMP)** | 已支持 | TypeScript 扩展，位于 `~/.omp/agent/extensions/open-island.ts`，同等生命周期覆盖，适配 OMP 事件别名 |
 
 ### 终端和 IDE
 
@@ -89,8 +92,10 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **Cursor** | 工作区 | 通过 `cursor` CLI 激活工作区 |
 | **Windsurf** | 工作区 | 通过 `windsurf` CLI 激活工作区 |
 | **Trae** | 工作区 | 通过 `trae` CLI 激活工作区 |
+| **Zed** | 工作区 | 识别集成终端；激活应用 / 打开项目目录 |
 | **JetBrains 全家桶** | 工作区 | IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover |
 | **Warp** | 完整支持 | 通过 SQLite pane 查找 + AX 菜单点击精准跳转到目标 tab |
+| **Conductor** | 应用 | 通过环境变量识别（`CONDUCTOR_SESSION_ID`）；激活 Conductor 应用 |
 
 ### 其他功能
 
@@ -216,11 +221,11 @@ Hooks **fail open**——如果 Open Island 没在运行，你的 agents 不受�
 
 ## Star History
 
-<a href="https://star-history.com/#Octane0411/open-vibe-island&Date">
+<a href="https://star-history.dera.page/#Octane0411/open-vibe-island&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Octane0411/open-vibe-island&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Octane0411/open-vibe-island&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Octane0411/open-vibe-island&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=Octane0411/open-vibe-island&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=Octane0411/open-vibe-island&type=Date" />
+   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=Octane0411/open-vibe-island&type=Date" />
  </picture>
 </a>
 
@@ -228,7 +233,7 @@ Hooks **fail open**——如果 Open Island 没在运行，你的 agents 不受�
 
 <a href="https://github.com/Octane0411/open-vibe-island/graphs/contributors">
   <!-- CONTRIBUTORS-IMG:START -->
-  <img src="https://contrib.rocks/image?repo=Octane0411/open-vibe-island&t=1785776976" />
+  <img src="https://contrib.rocks/image?repo=Octane0411/open-vibe-island&t=1788422812" />
   <!-- CONTRIBUTORS-IMG:END -->
 </a>
 
@@ -281,12 +286,21 @@ AI coding 正在成为日常开发流程的一部分，但围绕它的控制层�
   swift run OpenIslandSetup uninstallKimi  # 移除受管条目，保留用户自定义的 [[hooks]]
   ```
 
+- **Grok Build** — 基于 hook 的集成，写入 `~/.grok/hooks/open-island.json`（xAI Grok CLI / TUI）。Grok 使用 camelCase 字段（`sessionId`、`hookEventName`、`toolResult`），事件名同时接受 PascalCase 与 snake_case。Open Island 通过独立的 `--source grok` 路径完成解码与会话生命周期映射（可见性、活动状态、turn 完成、终端跳回）。受管安装注册完整支持的生命周期事件集合；工具事件为观察模式（尚未实现 PreToolUse 拦截）。仅当所有必需事件均挂载 Open Island 命令时，Settings 才显示已安装（Vibe Island 的 hooks 不计入）。可在设置窗口安装，或通过 CLI：
+
+  ```sh
+  swift run OpenIslandSetup installGrok    # 写入 ~/.grok/hooks/open-island.json
+  swift run OpenIslandSetup statusGrok     # 查看受管 hooks 是否已安装
+  swift run OpenIslandSetup uninstallGrok  # 移除 open-island.json 与 manifest
+  ```
+
 ### 终端支持
 
 - **Terminal.app**、**Ghostty**、**cmux**、**Kaku**、**WezTerm**、**iTerm2** 和 **Zellij** — 完整的 jump-back 支持，带会话附着匹配（cmux 通过 Unix socket API，Kaku/WezTerm/Zellij 通过 CLI pane 定位，iTerm2 通过 AppleScript session/TTY 探针）
-- **VS Code**、**VS Code Insiders**、**Cursor**、**Windsurf**、**Trae** — 工作区级跳转，通过对应 CLI（`code -r`、`cursor -r` 等）
+- **VS Code**、**VS Code Insiders**、**Cursor**、**Windsurf**、**Trae**、**Zed** — 工作区级跳转，通过对应 CLI / 激活应用（`code -r`、`cursor -r`、Zed 等）
 - **JetBrains 全家桶**（IntelliJ IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover） — 工作区级跳转，通过 IDE CLI launcher
 - **Warp** — 通过 SQLite pane 查找、pid 进程树消歧和 AX 菜单点击实现精准 tab 跳转
+- **Conductor**（conductor.build） — 应用级跳转：Conductor 将每个 agent 作为无 TTY 的子进程运行，因此其会话通过 Conductor 的环境变量（`CONDUCTOR_SESSION_ID` / `__CFBundleIdentifier`）识别，而非终端；jump-back 会将 Conductor 应用带到前台
 
 ### UI 与显示
 

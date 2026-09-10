@@ -718,6 +718,8 @@ public extension CodexHookPayload {
                 return "Windsurf"
             case "trae":
                 return "Trae"
+            case "zed":
+                return "Zed"
             default:
                 break
             }

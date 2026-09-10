@@ -849,12 +849,38 @@ struct IslandPanelView: View {
         let providers = openedUsageProviders
 
         if providers.isEmpty == false {
-            ViewThatFits(in: .horizontal) {
-                compactUsageSummaryView(providers, usesShortTitles: false)
-                compactUsageSummaryView(providers, usesShortTitles: true)
-            }
+            adaptiveUsageSummaryView(providers)
         } else {
             Color.clear
+        }
+    }
+
+    /// Renders the usage chips at the richest layout that fits the available
+    /// width, shedding detail one step at a time: reset countdowns first, then
+    /// the secondary windows, with the provider title abbreviated at each step
+    /// before anything is dropped.
+    @ViewBuilder
+    private func adaptiveUsageSummaryView(
+        _ providers: [UsageProviderPresentation]
+    ) -> some View {
+        // Re-render on a slow cadence so the reset countdowns stay honest
+        // while the panel is held open.
+        TimelineView(.periodic(from: .now, by: 30)) { _ in
+            usageSummaryLadder(providers)
+        }
+    }
+
+    @ViewBuilder
+    private func usageSummaryLadder(
+        _ providers: [UsageProviderPresentation]
+    ) -> some View {
+        ViewThatFits(in: .horizontal) {
+            compactUsageSummaryView(providers, layout: .init(usesShortTitle: false, showsAllWindows: true, showsRemaining: true))
+            compactUsageSummaryView(providers, layout: .init(usesShortTitle: true, showsAllWindows: true, showsRemaining: true))
+            compactUsageSummaryView(providers, layout: .init(usesShortTitle: false, showsAllWindows: true, showsRemaining: false))
+            compactUsageSummaryView(providers, layout: .init(usesShortTitle: true, showsAllWindows: true, showsRemaining: false))
+            compactUsageSummaryView(providers, layout: .init(usesShortTitle: false, showsAllWindows: false, showsRemaining: false))
+            compactUsageSummaryView(providers, layout: .init(usesShortTitle: true, showsAllWindows: false, showsRemaining: false))
         }
     }
 
@@ -956,11 +982,8 @@ struct IslandPanelView: View {
             Color.clear
                 .frame(maxWidth: .infinity)
         } else {
-            ViewThatFits(in: .horizontal) {
-                compactUsageSummaryView(providers, usesShortTitles: false)
-                compactUsageSummaryView(providers, usesShortTitles: true)
-            }
-            .frame(maxWidth: .infinity, alignment: alignment)
+            adaptiveUsageSummaryView(providers)
+                .frame(maxWidth: .infinity, alignment: alignment)
         }
     }
 
@@ -1019,30 +1042,49 @@ struct IslandPanelView: View {
 
     private func compactUsageSummaryView(
         _ providers: [UsageProviderPresentation],
-        usesShortTitles: Bool
+        layout: UsageChipLayout
     ) -> some View {
         HStack(spacing: 7) {
             ForEach(providers) { provider in
-                compactUsageChip(provider, usesShortTitle: usesShortTitles)
+                compactUsageChip(provider, layout: layout)
             }
         }
         .lineLimit(1)
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    private func compactUsageChip(_ provider: UsageProviderPresentation, usesShortTitle: Bool) -> some View {
-        HStack(spacing: 5) {
-            Text(usesShortTitle ? provider.shortTitle : provider.title)
+    private func compactUsageChip(
+        _ provider: UsageProviderPresentation,
+        layout: UsageChipLayout
+    ) -> some View {
+        let windows = layout.showsAllWindows
+            ? provider.windows
+            : (provider.peakWindow.map { [$0] } ?? [])
+
+        return HStack(spacing: 6) {
+            Text(layout.usesShortTitle ? provider.shortTitle : provider.title)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.74))
 
-            Text(provider.peakWindowLabel)
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.42))
+            ForEach(windows) { window in
+                HStack(spacing: 4) {
+                    Text(window.label)
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.42))
 
-            Text("\(provider.peakUsagePercentage)%")
-                .font(.system(size: 11.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(usageColor(for: provider.peakUsedPercentage))
+                    Text("\(window.roundedUsedPercentage)%")
+                        .font(.system(size: 11.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(usageColor(for: window.usedPercentage))
+
+                    if layout.showsRemaining,
+                       let resetsAt = window.resetsAt,
+                       let remaining = remainingDurationString(until: resetsAt) {
+                        Text("· \(remaining)")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.34))
+                    }
+                }
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -1108,6 +1150,14 @@ struct IslandPanelView: View {
 
         return formatter.string(from: interval)
     }
+}
+
+/// One rung of the usage-chip detail ladder. `adaptiveUsageSummaryView` walks
+/// these from richest to sparsest and renders the first that fits the lane.
+private struct UsageChipLayout {
+    let usesShortTitle: Bool
+    let showsAllWindows: Bool
+    let showsRemaining: Bool
 }
 
 private struct UsageProviderPresentation: Identifiable {
@@ -1400,6 +1450,8 @@ private struct IslandSessionRow: View {
         return Text(agentBadgeTitle)
             .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
             .foregroundStyle(tint.opacity(notificationChromeOpacity))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(tint.opacity(notificationBadgeFillOpacity), in: Capsule())
@@ -1410,6 +1462,8 @@ private struct IslandSessionRow: View {
         Text(title)
             .font(.system(size: 10.5, weight: .medium, design: .monospaced))
             .foregroundStyle(V6Palette.paper.opacity(presentation == .notification ? 0.52 : 0.7))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(.white.opacity(presentation == .notification ? 0.045 : 0.06), in: Capsule())

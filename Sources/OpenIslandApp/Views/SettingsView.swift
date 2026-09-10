@@ -194,7 +194,9 @@ struct GeneralSettingsPane: View {
                 )) {
                     Text(lang.t("settings.general.automatic")).tag(OverlayDisplayOption.automaticID)
                     ForEach(model.overlayDisplayOptions) { option in
-                        Text(option.title).tag(option.id)
+                        Text(option.title)
+                            .tag(option.id)
+                            .disabled(!option.isAvailable)
                     }
                 }
             }
@@ -212,7 +214,10 @@ struct GeneralSettingsPane: View {
             }
 
             Section(lang.t("settings.general.behavior")) {
-                Toggle(lang.t("settings.general.autoCollapse"), isOn: .constant(true))
+                Toggle(lang.t("settings.general.keepOpenUntilDecision"), isOn: Binding(
+                    get: { model.keepNotchOpenUntilDecision },
+                    set: { model.keepNotchOpenUntilDecision = $0 }
+                ))
                 Toggle(lang.t("settings.general.showDockIcon"), isOn: Binding(
                     get: { model.showDockIcon },
                     set: { model.showDockIcon = $0 }
@@ -253,7 +258,9 @@ struct DisplaySettingsPane: View {
                 )) {
                     Text(lang.t("settings.general.automatic")).tag(OverlayDisplayOption.automaticID)
                     ForEach(model.overlayDisplayOptions) { option in
-                        Text(option.title).tag(option.id)
+                        Text(option.title)
+                            .tag(option.id)
+                            .disabled(!option.isAvailable)
                     }
                 }
             }
@@ -424,6 +431,9 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallCursor = false
     @State private var confirmingUninstallGemini = false
     @State private var confirmingUninstallKimi = false
+    @State private var confirmingUninstallGrok = false
+    @State private var confirmingUninstallPi = false
+    @State private var confirmingUninstallOhMyPi = false
     @State private var confirmingUninstallClaudeUsage = false
 
     private var lang: LanguageManager { model.lang }
@@ -608,6 +618,60 @@ struct SetupSettingsPane: View {
                 } message: {
                     Text("This will remove Open Island hooks from ~/.kimi/config.toml.")
                 }
+
+                hookRow(
+                    name: "Grok Build",
+                    installed: model.grokHooksInstalled,
+                    busy: model.isGrokHookSetupBusy,
+                    requiresBinary: true,
+                    configLocationURL: model.grokHookStatus?.hooksURL,
+                    installAction: { model.installGrokHooks() },
+                    uninstallAction: { confirmingUninstallGrok = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallGrok) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallGrokHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.grok/hooks/open-island.json.")
+                }
+
+                hookRow(
+                    name: "Pi",
+                    installed: model.piExtensionInstalled,
+                    busy: model.isPiSetupBusy,
+                    requiresBinary: false,
+                    configLocationURL: model.piExtensionStatus?.extensionURL,
+                    installAction: { model.installPiExtension() },
+                    uninstallAction: { confirmingUninstallPi = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallPi) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallPiExtension()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove the Open Island extension from ~/.pi/agent/extensions/.")
+                }
+
+                hookRow(
+                    name: "Oh My Pi",
+                    installed: model.ohMyPiExtensionInstalled,
+                    busy: model.isOhMyPiSetupBusy,
+                    requiresBinary: false,
+                    configLocationURL: model.ohMyPiExtensionStatus?.extensionURL,
+                    installAction: { model.installOhMyPiExtension() },
+                    uninstallAction: { confirmingUninstallOhMyPi = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallOhMyPi) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallOhMyPiExtension()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove the Open Island extension from ~/.omp/agent/extensions/.")
+                }
             }
 
             Section {
@@ -685,6 +749,9 @@ struct SetupSettingsPane: View {
                     if !model.cursorHooksInstalled { model.installCursorHooks() }
                     if !model.geminiHooksInstalled { model.installGeminiHooks() }
                     if !model.kimiHooksInstalled { model.installKimiHooks() }
+                    if !model.grokHooksInstalled { model.installGrokHooks() }
+                    if !model.piExtensionInstalled { model.installPiExtension() }
+                    if !model.ohMyPiExtensionInstalled { model.installOhMyPiExtension() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
                 }
                 .disabled(model.hooksBinaryURL == nil || allReady)
@@ -746,7 +813,9 @@ struct SetupSettingsPane: View {
     private var allReady: Bool {
         model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
             && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
-            && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled && model.claudeUsageInstalled
+            && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled
+            && model.grokHooksInstalled
+            && model.piExtensionInstalled && model.ohMyPiExtensionInstalled && model.claudeUsageInstalled
     }
 
     @ViewBuilder
@@ -786,34 +855,21 @@ struct SetupSettingsPane: View {
     }
 
     private var hasErrors: Bool {
-        let claudeErrors = model.claudeHealthReport?.errors.count ?? 0
-        let codexErrors = model.codexHealthReport?.errors.count ?? 0
-        return claudeErrors + codexErrors > 0
+        model.healthReports.contains { !$0.errors.isEmpty }
     }
 
     private var hasRepairableIssues: Bool {
-        let claude = model.claudeHealthReport?.repairableIssues.isEmpty == false
-        let codex = model.codexHealthReport?.repairableIssues.isEmpty == false
-        return claude || codex
-    }
-
-    private var hasNotices: Bool {
-        let claude = model.claudeHealthReport?.notices.isEmpty == false
-        let codex = model.codexHealthReport?.notices.isEmpty == false
-        return claude || codex
+        model.healthReports.contains { !$0.repairableIssues.isEmpty }
     }
 
     @ViewBuilder
     private var hookDiagnosticsSection: some View {
         Section {
-            if let claudeReport = model.claudeHealthReport, !claudeReport.issues.isEmpty {
-                issueList(report: claudeReport)
-            }
-            if let codexReport = model.codexHealthReport, !codexReport.issues.isEmpty {
-                issueList(report: codexReport)
+            ForEach(model.healthReports.filter { !$0.issues.isEmpty }) { report in
+                issueList(report: report)
             }
 
-            if model.claudeHealthReport == nil && model.codexHealthReport == nil {
+            if model.healthReports.isEmpty {
                 HStack {
                     Text(lang.t("setup.diagnostics.notRun"))
                         .foregroundStyle(.secondary)
@@ -862,7 +918,7 @@ struct SetupSettingsPane: View {
     @ViewBuilder
     private func issueList(report: HookHealthReport) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(report.agent == "claude" ? "Claude Code" : "Codex")
+            Text(report.agent.displayName)
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)

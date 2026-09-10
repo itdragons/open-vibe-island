@@ -42,6 +42,12 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     var ignoresPointerExitAccessor: (() -> Bool)?
 
+    /// Overrides the global cursor query so pointer-sensitive behavior stays
+    /// deterministic when the host machine's real cursor happens to hover the
+    /// overlay area (e.g. during unit tests).
+    @ObservationIgnored
+    var pointerLocationProvider: (() -> NSPoint)?
+
     @ObservationIgnored
     var harnessRuntimeMonitor: HarnessRuntimeMonitor?
 
@@ -50,6 +56,9 @@ final class OverlayUICoordinator {
 
     @ObservationIgnored
     private var screenParametersObserver: NSObjectProtocol?
+
+    @ObservationIgnored
+    private var overlayDisplaySelectionTitle: String?
 
     @ObservationIgnored
     private var overlayTransitionGeneration: UInt64 = 0
@@ -83,6 +92,10 @@ final class OverlayUICoordinator {
         ignoresPointerExitAccessor?() ?? false
     }
 
+    private var currentPointerLocation: NSPoint {
+        pointerLocationProvider?() ?? NSEvent.mouseLocation
+    }
+
     private var preferredOverlayScreenID: String? {
         overlayDisplaySelectionID == OverlayDisplayOption.automaticID
             ? nil
@@ -92,9 +105,24 @@ final class OverlayUICoordinator {
     // MARK: - Initialization
 
     func restoreDisplayPreference() {
-        overlayDisplaySelectionID = UserDefaults.standard.string(
-            forKey: "overlay.display.preference"
-        ) ?? OverlayDisplayOption.automaticID
+        let defaults = UserDefaults.standard
+        let storedSelectionID = defaults.string(
+            forKey: OverlayDisplayPreferencePolicy.preferenceDefaultsKey
+        )
+        let restoredSelectionID = OverlayDisplayPreferencePolicy.restoredSelectionID(
+            from: storedSelectionID
+        )
+
+        if storedSelectionID != nil,
+           restoredSelectionID == OverlayDisplayOption.automaticID {
+            defaults.removeObject(forKey: OverlayDisplayPreferencePolicy.preferenceDefaultsKey)
+            defaults.removeObject(forKey: OverlayDisplayPreferencePolicy.preferenceTitleDefaultsKey)
+        }
+
+        overlayDisplaySelectionTitle = defaults.string(
+            forKey: OverlayDisplayPreferencePolicy.preferenceTitleDefaultsKey
+        )
+        overlayDisplaySelectionID = restoredSelectionID
     }
 
     /// Re-syncs the cached display options and the target panel placement
@@ -258,13 +286,15 @@ final class OverlayUICoordinator {
     // MARK: - Display configuration
 
     func refreshOverlayDisplayConfiguration() {
-        overlayDisplayOptions = overlayPanelController.availableDisplayOptions()
-
-        let validSelectionIDs = Set(overlayDisplayOptions.map(\.id))
-        if !validSelectionIDs.contains(overlayDisplaySelectionID) {
-            overlayDisplaySelectionID = OverlayDisplayOption.automaticID
-            return
-        }
+        let reconciliation = OverlayDisplayPreferencePolicy.reconcile(
+            availableOptions: overlayPanelController.availableDisplayOptions(),
+            selectionID: overlayDisplaySelectionID,
+            rememberedSelectionTitle: overlayDisplaySelectionTitle
+        )
+        overlayDisplaySelectionID = reconciliation.selectionID
+        overlayDisplaySelectionTitle = reconciliation.selectionTitle
+        overlayDisplayOptions = reconciliation.displayOptions
+        persistOverlayDisplayPreference()
 
         refreshOverlayPlacement()
     }
@@ -417,7 +447,7 @@ final class OverlayUICoordinator {
             return
         }
 
-        if overlayPanelController.isPointInExpandedArea(NSEvent.mouseLocation) {
+        if overlayPanelController.isPointInExpandedArea(currentPointerLocation) {
             notePointerInsideIslandSurface()
             return
         }
@@ -448,7 +478,7 @@ final class OverlayUICoordinator {
 
     var shouldDeferTimedNotificationAutoCollapse: Bool {
         isPointerInsideIslandSurface
-            || overlayPanelController.isPointInExpandedArea(NSEvent.mouseLocation)
+            || overlayPanelController.isPointInExpandedArea(currentPointerLocation)
     }
 
     private var shouldTrackPointerInsideIslandSurface: Bool {
@@ -458,7 +488,7 @@ final class OverlayUICoordinator {
 
     private var isPointerInsideCurrentNotificationCard: Bool {
         isPointerInsideIslandSurface
-            || overlayPanelController.isPointInExpandedArea(NSEvent.mouseLocation)
+            || overlayPanelController.isPointInExpandedArea(currentPointerLocation)
     }
 
     // MARK: - Debug snapshots (overlay portion)
@@ -512,9 +542,25 @@ final class OverlayUICoordinator {
     private func persistOverlayDisplayPreference() {
         let defaults = UserDefaults.standard
         if overlayDisplaySelectionID == OverlayDisplayOption.automaticID {
-            defaults.removeObject(forKey: "overlay.display.preference")
+            overlayDisplaySelectionTitle = nil
+            defaults.removeObject(forKey: OverlayDisplayPreferencePolicy.preferenceDefaultsKey)
+            defaults.removeObject(forKey: OverlayDisplayPreferencePolicy.preferenceTitleDefaultsKey)
         } else {
-            defaults.set(overlayDisplaySelectionID, forKey: "overlay.display.preference")
+            if let selectedOption = overlayDisplayOptions.first(where: {
+                $0.id == overlayDisplaySelectionID && $0.isAvailable
+            }) {
+                overlayDisplaySelectionTitle = selectedOption.title
+            }
+            defaults.set(
+                overlayDisplaySelectionID,
+                forKey: OverlayDisplayPreferencePolicy.preferenceDefaultsKey
+            )
+            if let overlayDisplaySelectionTitle {
+                defaults.set(
+                    overlayDisplaySelectionTitle,
+                    forKey: OverlayDisplayPreferencePolicy.preferenceTitleDefaultsKey
+                )
+            }
         }
     }
 }

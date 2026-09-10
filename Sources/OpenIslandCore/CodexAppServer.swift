@@ -87,6 +87,8 @@ public enum CodexAppServerNotification: Sendable {
 public final class CodexAppServerClient: @unchecked Sendable {
     private let codexPath: String
     private var process: Process?
+    private var stdoutReadHandle: FileHandle?
+    private var stderrReadHandle: FileHandle?
     /// Internal access so tests can inject a discard `Pipe` and drive
     /// the request path without launching a real codex subprocess.
     var stdin: FileHandle?
@@ -135,17 +137,10 @@ public final class CodexAppServerClient: @unchecked Sendable {
         self.stdin = stdinPipe.fileHandleForWriting
         self.process = proc
 
-        // Read stdout in a background thread.
-        stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            self?.handleIncomingData(data)
-        }
-
-        // Drain stderr so a full pipe can't block the child process.
-        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-            _ = handle.availableData
-        }
+        configureOutputHandlers(
+            stdout: stdoutPipe.fileHandleForReading,
+            stderr: stderrPipe.fileHandleForReading
+        )
 
         try proc.run()
 
@@ -163,8 +158,35 @@ public final class CodexAppServerClient: @unchecked Sendable {
         )
     }
 
+    func configureOutputHandlers(stdout: FileHandle, stderr: FileHandle) {
+        stdoutReadHandle = stdout
+        stderrReadHandle = stderr
+
+        // Read stdout in a background thread.
+        stdout.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
+            self?.handleIncomingData(data)
+        }
+
+        // Drain stderr so a full pipe can't block the child process.
+        stderr.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+            }
+        }
+    }
+
     /// Stop the app-server subprocess.
     public func stop() {
+        stdoutReadHandle?.readabilityHandler = nil
+        stderrReadHandle?.readabilityHandler = nil
+        stdoutReadHandle = nil
+        stderrReadHandle = nil
         process?.terminate()
         process = nil
         stdin = nil

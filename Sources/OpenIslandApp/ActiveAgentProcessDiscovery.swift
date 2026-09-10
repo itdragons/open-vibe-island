@@ -215,6 +215,40 @@ struct ActiveAgentProcessDiscovery {
                 ))
                 continue
             }
+
+            if isGrokProcess(command: process.command) {
+                let claimKey = "grok:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .grokBuild,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
+
+            if let piAgent = piAgentVariant(command: process.command) {
+                let claimKey = "\(piAgent.rawValue):\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: piAgent.tool,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
         }
 
         return snapshots
@@ -516,6 +550,18 @@ struct ActiveAgentProcessDiscovery {
         if lowered.contains("/trae.app/") {
             return "Trae"
         }
+        // Zed ships as Zed.app / Zed Preview.app; both live under …/Zed*.app/
+        if lowered.contains("/zed.app/")
+            || lowered.contains("/zed preview.app/")
+            || lowered.hasSuffix("/zed") {
+            return "Zed"
+        }
+        // Conductor's agents run under the conductor-runtime sidecar and the
+        // Conductor.app bundle, not a terminal.
+        if lowered.contains("/conductor.app/contents/macos/")
+            || lowered.contains("/com.conductor.app/") {
+            return "Conductor"
+        }
         if lowered.contains("/qoder.app/") {
             return "Qoder"
         }
@@ -579,8 +625,9 @@ struct ActiveAgentProcessDiscovery {
             }
 
             let value = String(nextLine.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
-            if value.hasPrefix("/") {
-                return value
+            let decoded = HexEscapedUTF8.decodeIfNeeded(value)
+            if decoded.hasPrefix("/") {
+                return decoded
             }
         }
 
@@ -767,6 +814,47 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return firstToken == "kimi" || firstToken.hasSuffix("/kimi")
+    }
+
+    /// Matches the Grok Build / Grok CLI entry-point (`grok` under `~/.grok/bin`
+    /// or on PATH). Avoids matching incidental paths that merely contain the
+    /// substring "grok".
+    private func isGrokProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return false
+        }
+
+        let binaryName = (firstToken as NSString).lastPathComponent
+        guard binaryName == "grok" else {
+            return false
+        }
+
+        return firstToken == "grok" || firstToken.hasSuffix("/grok")
+    }
+
+    private func piAgentVariant(command: String) -> PiAgentVariant? {
+        let lowered = command.lowercased()
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return nil
+        }
+        let binaryName = (firstToken as NSString).lastPathComponent
+
+        if binaryName == "omp"
+            || lowered.contains("/@oh-my-pi/pi-coding-agent/")
+            || lowered.contains("/node_modules/@oh-my-pi/pi-coding-agent/")
+        {
+            return .ohMyPi
+        }
+
+        if binaryName == "pi"
+            || lowered.contains("/@earendil-works/pi-coding-agent/")
+            || lowered.contains("/node_modules/@earendil-works/pi-coding-agent/")
+        {
+            return .pi
+        }
+
+        return nil
     }
 
     /// Returns `true` when the given `ps` command string belongs to a Claude Code process.

@@ -372,6 +372,8 @@ public extension GeminiHookPayload {
             return "Windsurf"
         case .some("trae"):
             return "Trae"
+        case .some("zed"):
+            return "Zed"
         default:
             break
         }

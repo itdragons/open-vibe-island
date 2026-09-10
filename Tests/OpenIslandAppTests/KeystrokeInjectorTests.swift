@@ -1,8 +1,10 @@
-import XCTest
+import Testing
 @testable import OpenIslandApp
 
-final class KeystrokeInjectorTests: XCTestCase {
-    func testDefaultInjectorPostsCmdShiftRightBracketWithoutCrashing() {
+@Suite(.serialized)
+struct KeystrokeInjectorTests {
+    @Test
+    func defaultInjectorPostsCmdShiftRightBracketWithoutCrashing() {
         // We can't observe actual OS-level CGEvent delivery in a unit test,
         // but constructing and posting the event without throwing/crashing
         // covers the init-time correctness of the keycode and flags.
@@ -10,11 +12,12 @@ final class KeystrokeInjectorTests: XCTestCase {
         injector.sendCmdShiftRightBracket()  // no XCTAssert — if this crashes the test fails
     }
 
-    func testSpyKeystrokerRecordsCalls() {
+    @Test
+    func spyKeystrokerRecordsCalls() {
         let spy = KeystrokeInjectorSpy()
         spy.sendCmdShiftRightBracket()
         spy.sendCmdShiftRightBracket()
-        XCTAssertEqual(spy.callCount, 2)
+        #expect(spy.callCount == 2)
     }
 }
 

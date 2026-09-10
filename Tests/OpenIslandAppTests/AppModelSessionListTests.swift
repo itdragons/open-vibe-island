@@ -314,8 +314,13 @@ struct AppModelSessionListTests {
     func islandSessionSectionsGroupStaleCompletedIntoIdle() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionGroup = .state
-        model.completedStaleThreshold = .fiveMinutes
+        // Write and read through an explicit display profile: the implicit
+        // setters resolve against the machine's real screen, which flips from
+        // .topBar to .notch mid-test on notched MacBooks.
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .fiveMinutes
+        }
 
         var approval = listSession(id: "approval", phase: .waitingForApproval, updatedAt: now)
         approval.permissionRequest = PermissionRequest(
@@ -331,6 +336,7 @@ struct AppModelSessionListTests {
         stale.isProcessAlive = true
 
         model.state = SessionState(sessions: [stale, done, approval])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         #expect(model.islandSessionSections.map(\.id) == ["state-approval", "state-done", "state-idle"])
         #expect(model.islandSessionSections.map(\.sessions.first?.id) == ["approval", "done", "stale"])
@@ -340,12 +346,15 @@ struct AppModelSessionListTests {
     func islandSessionSectionsKeepCompletedInDoneWhenStaleThresholdIsNever() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionGroup = .state
-        model.completedStaleThreshold = .never
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .never
+        }
 
         var oldDone = listSession(id: "old-done", phase: .completed, updatedAt: now.addingTimeInterval(-86_400))
         oldDone.isProcessAlive = true
         model.state = SessionState(sessions: [oldDone])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         #expect(model.islandSessionSections.map(\.id) == ["state-done"])
         #expect(model.islandSessionSections.first?.sessions.first?.id == "old-done")
@@ -355,7 +364,9 @@ struct AppModelSessionListTests {
     func islandSessionListCanSortByLastUpdate() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionSort = .lastUpdate
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionSort = .lastUpdate
+        }
 
         var olderRunning = listSession(id: "older-running", phase: .running, updatedAt: now.addingTimeInterval(-120))
         var newerCompleted = listSession(id: "newer-completed", phase: .completed, updatedAt: now.addingTimeInterval(-10))
@@ -363,6 +374,7 @@ struct AppModelSessionListTests {
         newerCompleted.isProcessAlive = true
 
         model.state = SessionState(sessions: [olderRunning, newerCompleted])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         #expect(model.islandListSessions.map(\.id) == ["newer-completed", "older-running"])
     }
@@ -759,6 +771,7 @@ struct AppModelSessionListTests {
     @Test
     func completionNotificationDefersTimedCollapseWhilePointerIsInside() {
         let model = AppModel()
+        model.overlay.pointerLocationProvider = { NSPoint(x: -10_000, y: -10_000) }
         model.applyTrackedEvent(
             .sessionStarted(SessionStarted(
                 sessionID: "session-1",
@@ -797,6 +810,10 @@ struct AppModelSessionListTests {
     @Test
     func completionNotificationHoverCancelsPendingTimedCollapse() {
         let model = AppModel()
+        // Pin the pointer far outside the overlay: auto-collapse is never
+        // scheduled when the machine's real cursor sits inside the expanded
+        // area, which made this test depend on the host's mouse position.
+        model.overlay.pointerLocationProvider = { NSPoint(x: -10_000, y: -10_000) }
         model.state = SessionState(
             sessions: [
                 AgentSession(
@@ -880,6 +897,114 @@ struct AppModelSessionListTests {
         #expect(merged.first?.claudeMetadata?.transcriptPath == "/tmp/claude.jsonl")
         #expect(merged.first?.claudeMetadata?.lastUserPrompt == "Check the Claude session registry.")
         #expect(merged.first?.phase == .running)
+    }
+
+    @Test
+    func mergeDiscoveredCodexSessionsReplacesInjectedCachedInitialPromptOnly() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "wrapped-codex-session",
+                    title: "Codex · /",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .stale,
+                    phase: .completed,
+                    summary: "Recovered from cache",
+                    updatedAt: now.addingTimeInterval(-60),
+                    codexMetadata: CodexSessionMetadata(
+                        initialUserPrompt: "# Files mentioned by the user: ## screenshot.png: /tmp/screenshot.png",
+                        lastUserPrompt: "# Chrome tabs: - Current URL: https://example.com"
+                    )
+                ),
+                AgentSession(
+                    id: "valid-codex-session",
+                    title: "Codex · project",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .stale,
+                    phase: .completed,
+                    summary: "Recovered from cache",
+                    updatedAt: now.addingTimeInterval(-60),
+                    codexMetadata: CodexSessionMetadata(
+                        initialUserPrompt: "Keep this valid cached topic."
+                    )
+                ),
+                AgentSession(
+                    id: "environment-context-codex-session",
+                    title: "Codex · /",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .stale,
+                    phase: .completed,
+                    summary: "Recovered from cache",
+                    updatedAt: now.addingTimeInterval(-60),
+                    codexMetadata: CodexSessionMetadata(
+                        initialUserPrompt: """
+                            <environment_context>
+                              <cwd>/tmp/open-island</cwd>
+                            </environment_context>
+                            """
+                    )
+                ),
+            ]
+        )
+
+        let merged = model.discovery.mergeDiscoveredSessions([
+            AgentSession(
+                id: "wrapped-codex-session",
+                title: "Codex · /",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .stale,
+                phase: .completed,
+                summary: "Recovered from rollout",
+                updatedAt: now,
+                codexMetadata: CodexSessionMetadata(
+                    initialUserPrompt: "Fix the session headline.",
+                    lastUserPrompt: "The headline still looks wrong."
+                )
+            ),
+            AgentSession(
+                id: "valid-codex-session",
+                title: "Codex · project",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .stale,
+                phase: .completed,
+                summary: "Recovered from rollout",
+                updatedAt: now,
+                codexMetadata: CodexSessionMetadata(
+                    initialUserPrompt: "Do not replace the cached topic."
+                )
+            ),
+            AgentSession(
+                id: "environment-context-codex-session",
+                title: "Codex · /",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .stale,
+                phase: .completed,
+                summary: "Recovered from rollout",
+                updatedAt: now,
+                codexMetadata: CodexSessionMetadata(
+                    initialUserPrompt: "Replace the injected environment context."
+                )
+            ),
+        ])
+
+        let wrapped = merged.first(where: { $0.id == "wrapped-codex-session" })
+        let valid = merged.first(where: { $0.id == "valid-codex-session" })
+        let environmentContext = merged.first(where: { $0.id == "environment-context-codex-session" })
+        #expect(wrapped?.codexMetadata?.initialUserPrompt == "Fix the session headline.")
+        #expect(wrapped?.codexMetadata?.lastUserPrompt == "The headline still looks wrong.")
+        #expect(valid?.codexMetadata?.initialUserPrompt == "Keep this valid cached topic.")
+        #expect(
+            environmentContext?.codexMetadata?.initialUserPrompt
+                == "Replace the injected environment context."
+        )
     }
 
     @Test

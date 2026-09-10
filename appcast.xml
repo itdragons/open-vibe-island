@@ -7,6 +7,45 @@
         <language>en</language>
         <!-- Items are added by the release workflow. See docs/releasing.md. -->
         <item>
+            <title>Version 1.2.0</title>
+            <sparkle:version>80</sparkle:version>
+            <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Thu, 03 Sep 2026 08:06:28 +0000</pubDate>
+            <enclosure
+                url="https://github.com/Octane0411/open-vibe-island/releases/download/v1.2.0/Open.Island.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="66zkXMSE1iIGN8t4/rb33MIYD3SwPR71l7c0AQSONbyvpOxsAFrr6OMOowji3SLBme4vSys1wzE2iK5WxjV6DA=="
+                length="13210017"
+            />
+        </item>
+        <item>
+            <title>Version 1.1.9</title>
+            <sparkle:version>79</sparkle:version>
+            <sparkle:shortVersionString>1.1.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Thu, 03 Sep 2026 03:32:40 +0000</pubDate>
+            <enclosure
+                url="https://github.com/Octane0411/open-vibe-island/releases/download/v1.1.9/Open.Island.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="KT+s8An2ySadlYLZdHdFCT0dBDRzOa+xGhzj/NWuur2UYSnq3ownR0jIPlQD1zGxvLTMn/a3PoBBB+USVMdyCw=="
+                length="12328836"
+            />
+        </item>
+        <item>
+            <title>Version 1.1.8</title>
+            <sparkle:version>78</sparkle:version>
+            <sparkle:shortVersionString>1.1.8</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Mon, 24 Aug 2026 08:06:24 +0000</pubDate>
+            <enclosure
+                url="https://github.com/Octane0411/open-vibe-island/releases/download/v1.1.8/Open.Island.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="3YLW/QWtH81TA8ntYQfx2pR3Ko21ZF9NJ7YjX6kXS4QOZhF/Ba69m1vH2mdsHZd5J6+j2ZcM3ujog5+6b9hYAA=="
+                length="12250183"
+            />
+        </item>
+        <item>
             <title>Version 1.1.7</title>
             <sparkle:version>77</sparkle:version>
             <sparkle:shortVersionString>1.1.7</sparkle:shortVersionString>

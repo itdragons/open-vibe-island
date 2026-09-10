@@ -50,9 +50,9 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 ## Supported Agents & Terminals
 
-**10 agents**: Claude Code, Codex, Cursor, Gemini CLI, Kimi CLI, OpenCode, Qoder, Qwen Code, Factory, CodeBuddy
+**13 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy
 
-**15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
+**15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, Zed, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 
 <details>
 <summary>Full compatibility table</summary>
@@ -73,6 +73,9 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Cursor** | Supported | Hook integration via `~/.cursor/hooks.json`, session tracking, workspace jump-back |
 | **Gemini CLI** | Supported | Hook integration via `~/.gemini/settings.json`, session tracking, fire-and-forget events |
 | **Kimi CLI** | Supported | Hook integration via `~/.kimi/config.toml` `[[hooks]]`, session tracking, permission flow (reuses Claude payload) |
+| **Grok Build** | Supported | Hook integration via `~/.grok/hooks/open-island.json`, session tracking, terminal jump-back, fire-and-forget events (no permission round-trip yet; camelCase payload) |
+| **Pi** | Supported | TypeScript extension at `~/.pi/agent/extensions/open-island.ts`; session, prompt, tool, completion, process-discovery, persistence, and terminal jump tracking |
+| **Oh My Pi (OMP)** | Supported | TypeScript extension at `~/.omp/agent/extensions/open-island.ts`; the same lifecycle coverage adapted to OMP event aliases |
 
 ### Terminals & IDEs
 
@@ -90,8 +93,10 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Cursor** | Workspace | Activate workspace via `cursor` CLI |
 | **Windsurf** | Workspace | Activate workspace via `windsurf` CLI |
 | **Trae** | Workspace | Activate workspace via `trae` CLI |
+| **Zed** | Workspace | Detect integrated terminal; activate app / open project folder |
 | **JetBrains IDEs** | Workspace | IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover |
 | **Warp** | Full | Precision tab jump via SQLite pane lookup + AX menu click |
+| **Conductor** | App | Detect via environment (`CONDUCTOR_SESSION_ID`); activate the Conductor app |
 
 ### Other Features
 
@@ -217,11 +222,11 @@ Repository: Octane0411/open-vibe-island
 
 ## Star History
 
-<a href="https://star-history.com/#Octane0411/open-vibe-island&Date">
+<a href="https://star-history.dera.page/#Octane0411/open-vibe-island&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Octane0411/open-vibe-island&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Octane0411/open-vibe-island&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Octane0411/open-vibe-island&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=Octane0411/open-vibe-island&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=Octane0411/open-vibe-island&type=Date" />
+   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=Octane0411/open-vibe-island&type=Date" />
  </picture>
 </a>
 
@@ -229,7 +234,7 @@ Repository: Octane0411/open-vibe-island
 
 <a href="https://github.com/Octane0411/open-vibe-island/graphs/contributors">
   <!-- CONTRIBUTORS-IMG:START -->
-  <img src="https://contrib.rocks/image?repo=Octane0411/open-vibe-island&t=1785776976" />
+  <img src="https://contrib.rocks/image?repo=Octane0411/open-vibe-island&t=1788422812" />
   <!-- CONTRIBUTORS-IMG:END -->
 </a>
 
@@ -279,12 +284,21 @@ Developers who already live in the terminal and want a better way to work with c
   swift run OpenIslandSetup uninstallKimi  # remove managed entries, preserve user-authored [[hooks]]
   ```
 
+- **Grok Build** — Hook-based integration via `~/.grok/hooks/open-island.json` (xAI Grok CLI / TUI). Grok emits camelCase hook envelopes (`sessionId`, `hookEventName`, `toolResult`) and accepts PascalCase or snake_case event names. Open Island uses a dedicated `--source grok` path for decode + lifecycle mapping (session visibility, activity, turn completion, terminal jump-back). Managed install registers the full supported lifecycle event set; tool events are observation-only (no PreToolUse blocking yet). Settings reports installed only when every required event is present with an Open Island command (Vibe Island hooks do not count). Manage installation from the Settings window, or via CLI:
+
+  ```sh
+  swift run OpenIslandSetup installGrok    # write ~/.grok/hooks/open-island.json
+  swift run OpenIslandSetup statusGrok     # report whether managed hooks are present
+  swift run OpenIslandSetup uninstallGrok  # remove managed open-island.json + manifest
+  ```
+
 ### Terminal Support
 
 - **Terminal.app**, **Ghostty**, **cmux**, **Kaku**, **WezTerm**, **iTerm2**, and **Zellij** — Full jump-back support with session attachment matching (cmux via Unix socket API, Kaku/WezTerm/Zellij via CLI pane targeting, iTerm2 via AppleScript session/TTY probe)
-- **VS Code**, **VS Code Insiders**, **Cursor**, **Windsurf**, **Trae** — Workspace-level jump via respective CLI (`code -r`, `cursor -r`, etc.)
+- **VS Code**, **VS Code Insiders**, **Cursor**, **Windsurf**, **Trae**, **Zed** — Workspace-level jump via respective CLI / app activation (`code -r`, `cursor -r`, Zed app, etc.)
 - **JetBrains IDEs** (IntelliJ IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover) — Workspace-level jump via IDE CLI launcher
 - **Warp** — Precision tab jump via SQLite pane lookup, pid-based sibling-tab disambiguation, and AX menu click
+- **Conductor** (conductor.build) — App-level jump: Conductor runs each agent as a headless, TTY-less subprocess, so its sessions are recognized via Conductor's environment (`CONDUCTOR_SESSION_ID` / `__CFBundleIdentifier`) rather than a terminal, and jump-back brings the Conductor app forward
 
 ### UI & Display
 

@@ -28,6 +28,12 @@ public final class BridgeServer: @unchecked Sendable {
         let tempID: String
     }
 
+    private struct ClaudeTranscriptCursor {
+        var transcriptPath: String
+        var readOffset: UInt64
+        var pendingData = Data()
+    }
+
     private struct PendingClaudeInteraction {
         enum Kind {
             case permission(ClaudeHookPayload)
@@ -74,6 +80,9 @@ public final class BridgeServer: @unchecked Sendable {
     private var pendingAgentDescriptions: [String: String] = [:]
     /// Maps toolUseID → temporary task ID for TaskCreate, so postToolUse can update with real ID.
     private var pendingTaskCreations: [String: PendingTaskCreation] = [:]
+    /// Tracks the portion of each live Claude transcript already inspected for
+    /// terminal background-agent task notifications.
+    private var claudeTranscriptCursors: [String: ClaudeTranscriptCursor] = [:]
     private var stateSnapshot = SessionState()
     /// Local working state: tracks sessions emitted by this server between
     /// snapshot pushes from AppModel. This is NOT a duplicate of AppModel's
@@ -468,6 +477,11 @@ public final class BridgeServer: @unchecked Sendable {
 
         case let .processGeminiHook(payload):
             handleGeminiHook(payload, from: clientID)
+
+        case let .processGrokHook(payload):
+            handleGrokHook(payload, from: clientID)
+        case let .processPiHook(payload):
+            handlePiHook(payload, from: clientID)
         }
     }
 
@@ -622,8 +636,10 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
+        reconcileCompletedClaudeSubagents(for: payload)
+
         // On every event from the parent session, opportunistically clean up
-        // subagents whose SubagentStop was never received.
+        // subagents whose SubagentStop and task notification were never received.
         cleanUpStaleSubagents(forSession: payload.sessionID)
 
         switch payload.hookEventName {
@@ -1175,6 +1191,122 @@ public final class BridgeServer: @unchecked Sendable {
         }
     }
 
+    private func handlePiHook(_ payload: PiHookPayload, from clientID: UUID) {
+        let displayName = payload.agent.tool.displayName
+
+        switch payload.hookEventName {
+        case .sessionStart:
+            emit(
+                .sessionStarted(
+                    piSessionStarted(for: payload, initialPhase: .completed)
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .heartbeat:
+            if localState.session(id: payload.sessionID)?.isSessionEnded == true {
+                send(.response(.acknowledged), to: clientID)
+                return
+            }
+            ensurePiSessionExists(for: payload, initialPhase: .completed)
+            emit(
+                .sessionHeartbeat(
+                    SessionHeartbeat(
+                        sessionID: payload.sessionID,
+                        timestamp: .now,
+                        recoverySession: piSessionStarted(
+                            for: payload,
+                            initialPhase: .completed
+                        )
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .userPromptSubmit:
+            ensurePiSessionExists(for: payload)
+            synchronizePiJumpTarget(for: payload)
+            synchronizePiMetadata(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.promptPreview.map { "Prompt: \($0)" } ?? payload.implicitStartSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .preToolUse:
+            ensurePiSessionExists(for: payload)
+            synchronizePiJumpTarget(for: payload)
+            synchronizePiMetadata(for: payload)
+            let summary = payload.toolName.map { "Running \($0)" } ?? "Running \(displayName) tool"
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.toolInputPreview.map { "\(summary): \($0)" } ?? summary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .postToolUse:
+            ensurePiSessionExists(for: payload)
+            synchronizePiJumpTarget(for: payload)
+            synchronizePiMetadata(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.toolName.map { "\($0) finished." } ?? "\(displayName) tool finished.",
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .stop:
+            ensurePiSessionExists(for: payload)
+            synchronizePiJumpTarget(for: payload)
+            synchronizePiMetadata(for: payload)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.assistantMessagePreview
+                            ?? "\(displayName) completed the turn.",
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .sessionEnd:
+            ensurePiSessionExists(for: payload)
+            synchronizePiJumpTarget(for: payload)
+            synchronizePiMetadata(for: payload)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: "\(displayName) session ended.",
+                        timestamp: .now,
+                        isInterrupt: true,
+                        isSessionEnd: true
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+        }
+    }
+
     /// Dispatches a Cursor hook payload to the appropriate handler based on
     /// the hook event name, managing session lifecycle, metadata, and
     /// permission directives.
@@ -1296,6 +1428,241 @@ public final class BridgeServer: @unchecked Sendable {
             )
             send(.response(.acknowledged), to: clientID)
         }
+    }
+
+    private func handleGrokHook(_ payload: GrokHookPayload, from clientID: UUID) {
+        // SessionStart always re-opens; every other event ignores ended sessions
+        // so late hooks cannot rewrite phase/summary after SessionEnd.
+        if payload.hookEventName != .sessionStart,
+           localState.session(id: payload.sessionID)?.isSessionEnded == true {
+            send(.response(.acknowledged), to: clientID)
+            return
+        }
+
+        switch payload.hookEventName {
+        case .sessionStart:
+            emit(
+                .sessionStarted(
+                    SessionStarted(
+                        sessionID: payload.sessionID,
+                        title: payload.sessionTitle,
+                        tool: .grokBuild,
+                        origin: .live,
+                        initialPhase: .completed,
+                        summary: payload.implicitSummary,
+                        timestamp: .now,
+                        jumpTarget: payload.defaultJumpTarget
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .userPromptSubmit:
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .preToolUse:
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            // Fire-and-forget: Grok fails open without a decision on stdout.
+            send(.response(.acknowledged), to: clientID)
+
+        // PermissionDenied fires for both a user Reject (a StopCancelled with
+        // permission_rejected follows) and a configured PolicyDeny rule (the
+        // model is told the tool was skipped and keeps working), so it must
+        // not settle the turn on its own.
+        case .postToolUse, .subagentStart, .subagentStop, .preCompact, .postCompact, .permissionDenied:
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            let currentPhase = localState.session(id: payload.sessionID)?.phase ?? .running
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        phase: currentPhase == .completed ? .completed : .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .notification:
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            let currentPhase = localState.session(id: payload.sessionID)?.phase ?? .running
+            if payload.isIdlePromptNotification {
+                // `idle_prompt` is Grok's backstop for turns that reported none
+                // of the Stop-family events: settle a still-running session.
+                // Once already completed, leave the Stop summary untouched.
+                if currentPhase != .completed {
+                    emit(
+                        .sessionCompleted(
+                            SessionCompleted(
+                                sessionID: payload.sessionID,
+                                summary: payload.implicitSummary,
+                                timestamp: .now
+                            )
+                        )
+                    )
+                }
+            } else {
+                emit(
+                    .activityUpdated(
+                        SessionActivityUpdated(
+                            sessionID: payload.sessionID,
+                            summary: payload.implicitSummary,
+                            phase: currentPhase == .completed ? .completed : .running,
+                            timestamp: .now
+                        )
+                    )
+                )
+            }
+            send(.response(.acknowledged), to: clientID)
+
+        case .postToolUseFailure, .stopFailure:
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        phase: .completed,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .stop:
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            // Ignore observe-only session-end Stop fires (reason != end_turn).
+            if payload.isGenuineTurnStop {
+                emit(
+                    .sessionCompleted(
+                        SessionCompleted(
+                            sessionID: payload.sessionID,
+                            summary: payload.implicitSummary,
+                            timestamp: .now
+                        )
+                    )
+                )
+            }
+            send(.response(.acknowledged), to: clientID)
+
+        case .stopCancelled:
+            // Fires *instead of* Stop when a turn ends without completing
+            // (user interrupt, declined permission, --max-turns, no-progress
+            // bail-out). Settle the turn like a genuine Stop. A cancellation
+            // the user caused is flagged as an interrupt so the island does
+            // not pop for something they just did; a runtime bail-out
+            // (`cancelledBy == "runtime"`, e.g. max turns) is worth surfacing.
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        timestamp: .now,
+                        isInterrupt: payload.isUserInitiatedCancellation
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .sessionEnd:
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        timestamp: .now,
+                        isInterrupt: true,
+                        isSessionEnd: true
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+        }
+    }
+
+    /// Ensures a Grok session row exists for non-`SessionStart` events.
+    ///
+    /// Policy: if a session with this ID already exists — including after
+    /// `SessionEnd` — do **not** recreate it from tool/prompt/stop events.
+    /// Only `SessionStart` (which always emits `sessionStarted`) may re-open
+    /// an ended session. This prevents late hooks or process-liveness churn
+    /// from resurrecting terminated sessions.
+    private func ensureGrokSessionExists(for payload: GrokHookPayload) {
+        if localState.session(id: payload.sessionID) != nil {
+            return
+        }
+
+        emit(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: payload.sessionID,
+                    title: payload.sessionTitle,
+                    tool: .grokBuild,
+                    origin: .live,
+                    initialPhase: .completed,
+                    summary: payload.implicitSummary,
+                    timestamp: .now,
+                    jumpTarget: payload.defaultJumpTarget
+                )
+            )
+        )
+    }
+
+    private func synchronizeGrokJumpTarget(for payload: GrokHookPayload) {
+        guard let existingSession = localState.session(id: payload.sessionID) else {
+            return
+        }
+
+        let jumpTarget = Self.mergeJumpTargetPreservingExistingResolvedFields(
+            incoming: payload.defaultJumpTarget,
+            existing: existingSession.jumpTarget
+        )
+
+        guard existingSession.jumpTarget != jumpTarget else {
+            return
+        }
+
+        emit(
+            .jumpTargetUpdated(
+                JumpTargetUpdated(
+                    sessionID: payload.sessionID,
+                    jumpTarget: jumpTarget,
+                    timestamp: .now
+                )
+            )
+        )
     }
 
     private func handleGeminiHook(_ payload: GeminiHookPayload, from clientID: UUID) {
@@ -1716,6 +2083,84 @@ public final class BridgeServer: @unchecked Sendable {
         }
     }
 
+    private func piSessionStarted(
+        for payload: PiHookPayload,
+        initialPhase: SessionPhase
+    ) -> SessionStarted {
+        SessionStarted(
+            sessionID: payload.sessionID,
+            title: payload.sessionTitle,
+            tool: payload.agent.tool,
+            origin: .live,
+            initialPhase: initialPhase,
+            summary: payload.implicitStartSummary,
+            timestamp: .now,
+            jumpTarget: payload.defaultJumpTarget,
+            piMetadata: payload.defaultPiMetadata.isEmpty ? nil : payload.defaultPiMetadata
+        )
+    }
+
+    private func ensurePiSessionExists(
+        for payload: PiHookPayload,
+        initialPhase: SessionPhase = .running
+    ) {
+        guard !hasSession(id: payload.sessionID) else { return }
+        emit(
+            .sessionStarted(
+                piSessionStarted(for: payload, initialPhase: initialPhase)
+            )
+        )
+    }
+
+    private func synchronizePiJumpTarget(for payload: PiHookPayload) {
+        guard let existingSession = localState.session(id: payload.sessionID) else {
+            return
+        }
+
+        let jumpTarget = Self.mergeJumpTargetPreservingExistingResolvedFields(
+            incoming: payload.defaultJumpTarget,
+            existing: existingSession.jumpTarget
+        )
+
+        guard existingSession.jumpTarget != jumpTarget else {
+            return
+        }
+
+        emit(
+            .jumpTargetUpdated(
+                JumpTargetUpdated(
+                    sessionID: payload.sessionID,
+                    jumpTarget: jumpTarget,
+                    timestamp: .now
+                )
+            )
+        )
+    }
+
+    private func synchronizePiMetadata(for payload: PiHookPayload) {
+        guard let existingSession = localState.session(id: payload.sessionID) else { return }
+        let existing = existingSession.piMetadata
+        let update = payload.defaultPiMetadata
+        let clearsTool = payload.hookEventName == .postToolUse
+            || payload.hookEventName == .stop
+            || payload.hookEventName == .sessionEnd
+        let merged = PiSessionMetadata.merged(
+            existing: existing,
+            update: update,
+            clearsCurrentTool: clearsTool
+        )
+        guard !merged.isEmpty, existing != merged else { return }
+        emit(
+            .piSessionMetadataUpdated(
+                PiSessionMetadataUpdated(
+                    sessionID: payload.sessionID,
+                    piMetadata: merged,
+                    timestamp: .now
+                )
+            )
+        )
+    }
+
     private func resolvePendingOpenCodeInteraction(
         sessionID: String,
         resolution: PermissionResolution
@@ -2109,12 +2554,17 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func removeSubagent(agentID: String, fromSession sessionID: String) {
+        removeSubagents(agentIDs: [agentID], fromSession: sessionID)
+    }
+
+    private func removeSubagents(agentIDs: Set<String>, fromSession sessionID: String) {
+        guard !agentIDs.isEmpty else { return }
         guard var metadata = localState.session(id: sessionID)?.claudeMetadata else {
             return
         }
 
         let previousCount = metadata.activeSubagents.count
-        metadata.activeSubagents.removeAll { $0.agentID == agentID }
+        metadata.activeSubagents.removeAll { agentIDs.contains($0.agentID) }
         guard metadata.activeSubagents.count != previousCount else {
             return
         }
@@ -2128,6 +2578,90 @@ public final class BridgeServer: @unchecked Sendable {
                 )
             )
         )
+    }
+
+    private func reconcileCompletedClaudeSubagents(for payload: ClaudeHookPayload) {
+        let notifications = readNewClaudeTaskNotifications(
+            sessionID: payload.sessionID,
+            transcriptPath: payload.transcriptPath
+        )
+        let completedAgentIDs = Set(notifications.compactMap(\.taskID))
+        removeSubagents(agentIDs: completedAgentIDs, fromSession: payload.sessionID)
+    }
+
+    private func readNewClaudeTaskNotifications(
+        sessionID: String,
+        transcriptPath: String?
+    ) -> [ClaudeTaskNotification] {
+        guard let transcriptPath,
+              !transcriptPath.isEmpty,
+              let fileSize = fileSize(atPath: transcriptPath) else {
+            return []
+        }
+
+        guard var cursor = claudeTranscriptCursors[sessionID],
+              cursor.transcriptPath == transcriptPath else {
+            claudeTranscriptCursors[sessionID] = ClaudeTranscriptCursor(
+                transcriptPath: transcriptPath,
+                readOffset: fileSize
+            )
+            return []
+        }
+
+        if fileSize < cursor.readOffset {
+            cursor.readOffset = fileSize
+            cursor.pendingData.removeAll(keepingCapacity: false)
+            claudeTranscriptCursors[sessionID] = cursor
+            return []
+        }
+
+        guard fileSize > cursor.readOffset,
+              let fileHandle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: transcriptPath)) else {
+            return []
+        }
+        defer { try? fileHandle.close() }
+
+        do {
+            try fileHandle.seek(toOffset: cursor.readOffset)
+        } catch {
+            cursor.readOffset = fileSize
+            cursor.pendingData.removeAll(keepingCapacity: false)
+            claudeTranscriptCursors[sessionID] = cursor
+            return []
+        }
+
+        var bytesRead: UInt64 = 0
+        while let chunk = try? fileHandle.read(upToCount: 64 * 1_024),
+              !chunk.isEmpty {
+            cursor.pendingData.append(chunk)
+            bytesRead += UInt64(chunk.count)
+        }
+        cursor.readOffset += bytesRead
+
+        var notifications: [ClaudeTaskNotification] = []
+        let newline = UInt8(ascii: "\n")
+        while let newlineIndex = cursor.pendingData.firstIndex(of: newline) {
+            let lineData = cursor.pendingData.prefix(upTo: newlineIndex)
+            cursor.pendingData.removeSubrange(...newlineIndex)
+            guard !lineData.isEmpty,
+                  let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
+                continue
+            }
+            notifications.append(
+                contentsOf: ClaudeTaskNotificationParser.terminalNotifications(in: object)
+            )
+        }
+
+        claudeTranscriptCursors[sessionID] = cursor
+        return notifications
+    }
+
+    private func fileSize(atPath path: String) -> UInt64? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = attributes[.size] as? NSNumber else {
+            return nil
+        }
+        return size.uint64Value
     }
 
     /// Removes subagents that have been inactive for too long.
@@ -2201,10 +2735,21 @@ public final class BridgeServer: @unchecked Sendable {
         }
     }
 
+    /// Test-only accessor for the bridge's local session state after hook events.
+    /// Reuses the `queueKey` guard from `stop()` so a caller already on the
+    /// bridge queue reads directly instead of deadlocking in `queue.sync`.
+    func sessionStateSnapshotForTests() -> SessionState {
+        if DispatchQueue.getSpecific(key: queueKey) != nil {
+            return localState
+        }
+        return queue.sync { localState }
+    }
+
     /// Clears all active subagents from the session.
     /// Called when the session's turn ends (`stop`, `stopFailure`, `sessionEnd`)
     /// to ensure no stale subagent indicators linger.
     private func clearAllActiveSubagents(fromSession sessionID: String) {
+        claudeTranscriptCursors.removeValue(forKey: sessionID)
         guard var metadata = localState.session(id: sessionID)?.claudeMetadata,
               !metadata.activeSubagents.isEmpty else {
             return

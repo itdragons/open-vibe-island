@@ -23,6 +23,7 @@
 "settings.general.hideFullscreen" = "全屏时隐藏";
 "settings.general.autoHideNoSessions" = "无活跃会话时自动隐藏";
 "settings.general.autoCollapse" = "鼠标离开时自动收起";
+"settings.general.keepOpenUntilDecision" = "未审批前不关闭刘海";
 "settings.general.showDockIcon" = "在 Dock 中显示图标";
 "settings.general.hapticFeedback" = "悬停时震动反馈";
 "settings.general.suppressFrontmostNotifications" = "前台会话不弹出通知";

@@ -1188,6 +1188,15 @@ public extension ClaudeHookPayload {
             return "Claude.app"
         }
 
+        // Conductor (conductor.build) runs the agent as a TTY-less subprocess,
+        // so there is no terminal and TERM_PROGRAM is unset; it stamps its own
+        // env identifiers instead. Checked before TERM_PROGRAM like Claude.app.
+        if environment["CONDUCTOR_SESSION_ID"]?.isEmpty == false
+            || environment["CONDUCTOR_WORKSPACE_ID"]?.isEmpty == false
+            || environment["__CFBundleIdentifier"]?.lowercased() == "com.conductor.app" {
+            return "Conductor"
+        }
+
         // TERM_PROGRAM is the only authoritative terminal signal. Each
         // terminal sets it explicitly when it execs the user's shell, so
         // unlike per-app env vars (GHOSTTY_RESOURCES_DIR,
@@ -1232,6 +1241,8 @@ public extension ClaudeHookPayload {
                 return "Windsurf"
             case "trae":
                 return "Trae"
+            case "zed":
+                return "Zed"
             default:
                 break
             }
@@ -1269,6 +1280,12 @@ public extension ClaudeHookPayload {
                 if bundleID.contains("intellij") { return "IntelliJ IDEA" }
             }
             return "IntelliJ IDEA"  // Fallback for unknown JetBrains IDE
+        }
+
+        // Zed (and Zed Preview) when TERM_PROGRAM is missing.
+        if let bundleID = environment["__CFBundleIdentifier"]?.lowercased(),
+           bundleID == "dev.zed.zed" || bundleID.hasPrefix("dev.zed.zed") {
+            return "Zed"
         }
 
         return nil

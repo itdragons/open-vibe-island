@@ -1,11 +1,82 @@
 import AppKit
 
-struct OverlayDisplayOption: Identifiable, Equatable {
+struct OverlayDisplayOption: Identifiable, Equatable, Codable, Sendable {
     static let automaticID = "automatic"
 
     let id: String
     let title: String
     let subtitle: String
+    let isAvailable: Bool
+
+    init(id: String, title: String, subtitle: String, isAvailable: Bool = true) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.isAvailable = isAvailable
+    }
+}
+
+struct OverlayDisplayPreferenceReconciliation: Equatable, Codable, Sendable {
+    let selectionID: String
+    let selectionTitle: String?
+    let displayOptions: [OverlayDisplayOption]
+}
+
+enum OverlayDisplayPreferencePolicy {
+    static let preferenceDefaultsKey = "overlay.display.preference"
+    static let preferenceTitleDefaultsKey = "overlay.display.preference.title"
+    private static let legacyDisplayIDPrefix = "display-"
+
+    /// Legacy preferences stored a transient `CGDirectDisplayID` and cannot
+    /// be matched safely after a hotplug. New preferences use a stable display
+    /// UUID (or the resolver's explicit fallback identifier).
+    static func restoredSelectionID(from storedSelectionID: String?) -> String {
+        guard let storedSelectionID,
+              !storedSelectionID.isEmpty,
+              !storedSelectionID.hasPrefix(legacyDisplayIDPrefix) else {
+            return OverlayDisplayOption.automaticID
+        }
+
+        return storedSelectionID
+    }
+
+    /// Keeps the persisted user preference separate from the currently
+    /// available displays. When the preferred display is disconnected, a
+    /// disabled placeholder keeps the Picker selection intact while placement
+    /// temporarily falls back to another screen.
+    static func reconcile(
+        availableOptions: [OverlayDisplayOption],
+        selectionID: String,
+        rememberedSelectionTitle: String?
+    ) -> OverlayDisplayPreferenceReconciliation {
+        guard selectionID != OverlayDisplayOption.automaticID else {
+            return OverlayDisplayPreferenceReconciliation(
+                selectionID: selectionID,
+                selectionTitle: nil,
+                displayOptions: availableOptions
+            )
+        }
+
+        if let selectedOption = availableOptions.first(where: { $0.id == selectionID }) {
+            return OverlayDisplayPreferenceReconciliation(
+                selectionID: selectionID,
+                selectionTitle: selectedOption.title,
+                displayOptions: availableOptions
+            )
+        }
+
+        let unavailableOption = OverlayDisplayOption(
+            id: selectionID,
+            title: rememberedSelectionTitle ?? selectionID,
+            subtitle: "Unavailable",
+            isAvailable: false
+        )
+        return OverlayDisplayPreferenceReconciliation(
+            selectionID: selectionID,
+            selectionTitle: rememberedSelectionTitle,
+            displayOptions: availableOptions + [unavailableOption]
+        )
+    }
 }
 
 enum OverlayPlacementMode: String, Equatable {
@@ -179,9 +250,10 @@ enum OverlayDisplayResolver {
 
     /// Disambiguates identical displays (e.g. two AirPlay receivers with the
     /// same model name and resolution) by appending the arrangement origin.
-    /// The origin is not stable across display rearrangement, but a mismatched
-    /// preference will self-heal through the existing
-    /// `validSelectionIDs.contains` check in `refreshOverlayDisplayConfiguration()`.
+    /// The origin is not stable across display rearrangement. If it changes,
+    /// the preference remains unavailable until that display is reselected;
+    /// it is not discarded automatically because a temporary disconnect must
+    /// preserve the user's intent.
     private static func fallbackScreenID(for screen: NSScreen) -> String {
         let width = Int(screen.frame.width.rounded())
         let height = Int(screen.frame.height.rounded())

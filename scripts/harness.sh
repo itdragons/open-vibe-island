@@ -21,7 +21,7 @@ run_step() {
             ;;
         test)
             echo "==> test"
-            swift test
+            zsh "$repo_root/scripts/test-clt.sh"
             ;;
         lint)
             echo "==> lint"

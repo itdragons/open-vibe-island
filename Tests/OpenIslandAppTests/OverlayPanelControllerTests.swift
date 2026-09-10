@@ -4,6 +4,93 @@ import Testing
 
 struct OverlayPanelControllerTests {
     @Test
+    func legacyDisplayPreferenceResetsToAutomatic() {
+        #expect(
+            OverlayDisplayPreferencePolicy.restoredSelectionID(from: "display-69733248")
+                == OverlayDisplayOption.automaticID
+        )
+    }
+
+    @Test
+    func missingDisplayPreferenceDefaultsToAutomatic() {
+        #expect(
+            OverlayDisplayPreferencePolicy.restoredSelectionID(from: nil)
+                == OverlayDisplayOption.automaticID
+        )
+        #expect(
+            OverlayDisplayPreferencePolicy.restoredSelectionID(from: "")
+                == OverlayDisplayOption.automaticID
+        )
+    }
+
+    @Test
+    func stableDisplayPreferenceSurvivesRestore() {
+        let displayUUID = "7A4C9F42-40FD-4EB4-B189-27F55385629C"
+
+        #expect(
+            OverlayDisplayPreferencePolicy.restoredSelectionID(from: displayUUID)
+                == displayUUID
+        )
+    }
+
+    @Test
+    func disconnectedDisplayPreferenceRemainsSelected() {
+        let displayUUID = "7A4C9F42-40FD-4EB4-B189-27F55385629C"
+        let builtIn = OverlayDisplayOption(
+            id: "built-in",
+            title: "Built-in Display",
+            subtitle: "Built-in notch"
+        )
+
+        let result = OverlayDisplayPreferencePolicy.reconcile(
+            availableOptions: [builtIn],
+            selectionID: displayUUID,
+            rememberedSelectionTitle: "External Display"
+        )
+
+        #expect(result.selectionID == displayUUID)
+        #expect(result.selectionTitle == "External Display")
+        #expect(result.displayOptions.count == 2)
+        #expect(result.displayOptions.last?.id == displayUUID)
+        #expect(result.displayOptions.last?.title == "External Display")
+        #expect(result.displayOptions.last?.isAvailable == false)
+    }
+
+    @Test
+    func reconnectedDisplayReplacesUnavailablePlaceholder() {
+        let displayUUID = "7A4C9F42-40FD-4EB4-B189-27F55385629C"
+        let external = OverlayDisplayOption(
+            id: displayUUID,
+            title: "External Display",
+            subtitle: "Top-bar fallback"
+        )
+
+        let result = OverlayDisplayPreferencePolicy.reconcile(
+            availableOptions: [external],
+            selectionID: displayUUID,
+            rememberedSelectionTitle: "External Display"
+        )
+
+        #expect(result.selectionID == displayUUID)
+        #expect(result.selectionTitle == "External Display")
+        #expect(result.displayOptions == [external])
+        #expect(result.displayOptions[0].isAvailable)
+    }
+
+    @Test
+    func automaticPreferenceDoesNotCreateUnavailablePlaceholder() {
+        let result = OverlayDisplayPreferencePolicy.reconcile(
+            availableOptions: [],
+            selectionID: OverlayDisplayOption.automaticID,
+            rememberedSelectionTitle: "External Display"
+        )
+
+        #expect(result.selectionID == OverlayDisplayOption.automaticID)
+        #expect(result.selectionTitle == nil)
+        #expect(result.displayOptions.isEmpty)
+    }
+
+    @Test
     func closedSurfaceRectCentersOnNotch() {
         let notchRect = NSRect(x: 200, y: 900, width: 200, height: 38)
         let closedWidth: CGFloat = 320
