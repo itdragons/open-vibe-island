@@ -14,7 +14,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case grokBuild
     case pi
     case ohMyPi
-    case hermes
+    case zcode
 
     public var displayName: String {
         switch self {
@@ -44,8 +44,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "Pi"
         case .ohMyPi:
             "Oh My Pi"
-        case .hermes:
-            "Hermes"
+        case .zcode:
+            "ZCode"
         }
     }
 
@@ -77,8 +77,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "PI"
         case .ohMyPi:
             "OMP"
-        case .hermes:
-            "HERMES"
+        case .zcode:
+            "ZCODE"
         }
     }
 
@@ -110,7 +110,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
         case .grokBuild:  "#22d3ee"
         case .pi:         "#a3e635"
         case .ohMyPi:     "#f472b6"
-        case .hermes:     "#38bdf8"
+        case .zcode:      "#2dd4bf"
         }
     }
 }
@@ -398,7 +398,6 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     public var openCodeMetadata: OpenCodeSessionMetadata?
     public var cursorMetadata: CursorSessionMetadata?
     public var piMetadata: PiSessionMetadata?
-    public var hermesMetadata: HermesSessionMetadata?
 
     /// Whether this session originates from a remote (SSH) connection.
     public var isRemote: Bool = false
@@ -454,8 +453,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         geminiMetadata: GeminiSessionMetadata? = nil,
         openCodeMetadata: OpenCodeSessionMetadata? = nil,
         cursorMetadata: CursorSessionMetadata? = nil,
-        piMetadata: PiSessionMetadata? = nil,
-        hermesMetadata: HermesSessionMetadata? = nil
+        piMetadata: PiSessionMetadata? = nil
     ) {
         self.id = id
         self.title = title
@@ -475,7 +473,6 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         self.openCodeMetadata = openCodeMetadata
         self.cursorMetadata = cursorMetadata
         self.piMetadata = piMetadata
-        self.hermesMetadata = hermesMetadata
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -497,7 +494,6 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         case openCodeMetadata
         case cursorMetadata
         case piMetadata
-        case hermesMetadata
     }
 
     public init(from decoder: any Decoder) throws {
@@ -520,7 +516,6 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         openCodeMetadata = try container.decodeIfPresent(OpenCodeSessionMetadata.self, forKey: .openCodeMetadata)
         cursorMetadata = try container.decodeIfPresent(CursorSessionMetadata.self, forKey: .cursorMetadata)
         piMetadata = try container.decodeIfPresent(PiSessionMetadata.self, forKey: .piMetadata)
-        hermesMetadata = try container.decodeIfPresent(HermesSessionMetadata.self, forKey: .hermesMetadata)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -543,7 +538,6 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         try container.encodeIfPresent(openCodeMetadata, forKey: .openCodeMetadata)
         try container.encodeIfPresent(cursorMetadata, forKey: .cursorMetadata)
         try container.encodeIfPresent(piMetadata, forKey: .piMetadata)
-        try container.encodeIfPresent(hermesMetadata, forKey: .hermesMetadata)
     }
 }
 
@@ -586,11 +580,11 @@ public extension AgentSession {
     }
 
     var currentToolName: String? {
-        firstNonNil(codexMetadata?.currentTool, claudeMetadata?.currentTool, openCodeMetadata?.currentTool, cursorMetadata?.currentTool, piMetadata?.currentTool)
+        codexMetadata?.currentTool ?? claudeMetadata?.currentTool ?? openCodeMetadata?.currentTool ?? cursorMetadata?.currentTool ?? piMetadata?.currentTool
     }
 
     var lastAssistantMessageText: String? {
-        firstNonNil(codexMetadata?.lastAssistantMessage, claudeMetadata?.lastAssistantMessage, geminiMetadata?.lastAssistantMessage, openCodeMetadata?.lastAssistantMessage, cursorMetadata?.lastAssistantMessage, piMetadata?.lastAssistantMessage, hermesMetadata?.lastAssistantMessage)
+        codexMetadata?.lastAssistantMessage ?? claudeMetadata?.lastAssistantMessage ?? geminiMetadata?.lastAssistantMessage ?? openCodeMetadata?.lastAssistantMessage ?? cursorMetadata?.lastAssistantMessage ?? piMetadata?.lastAssistantMessage
     }
 
     var completionAssistantMessageText: String? {
@@ -608,29 +602,20 @@ public extension AgentSession {
     }
 
     var trackingTranscriptPath: String? {
-        firstNonNil(codexMetadata?.transcriptPath, claudeMetadata?.transcriptPath, geminiMetadata?.transcriptPath, piMetadata?.transcriptPath)
+        codexMetadata?.transcriptPath ?? claudeMetadata?.transcriptPath ?? geminiMetadata?.transcriptPath ?? piMetadata?.transcriptPath
     }
 
     var latestUserPromptText: String? {
-        firstNonNil(codexMetadata?.lastUserPrompt, claudeMetadata?.lastUserPrompt, geminiMetadata?.lastUserPrompt, openCodeMetadata?.lastUserPrompt, cursorMetadata?.lastUserPrompt, piMetadata?.lastUserPrompt, hermesMetadata?.lastUserPrompt)
+        codexMetadata?.lastUserPrompt ?? claudeMetadata?.lastUserPrompt ?? geminiMetadata?.lastUserPrompt ?? openCodeMetadata?.lastUserPrompt ?? cursorMetadata?.lastUserPrompt ?? piMetadata?.lastUserPrompt
     }
 
     var initialUserPromptText: String? {
-        firstNonNil(codexMetadata?.initialUserPrompt, claudeMetadata?.initialUserPrompt, geminiMetadata?.initialUserPrompt, openCodeMetadata?.initialUserPrompt, cursorMetadata?.initialUserPrompt, piMetadata?.initialUserPrompt, hermesMetadata?.initialUserPrompt)
+        codexMetadata?.initialUserPrompt ?? claudeMetadata?.initialUserPrompt ?? geminiMetadata?.initialUserPrompt ?? openCodeMetadata?.initialUserPrompt ?? cursorMetadata?.initialUserPrompt ?? piMetadata?.initialUserPrompt
     }
 
     var currentCommandPreviewText: String? {
-        firstNonNil(codexMetadata?.currentCommandPreview, claudeMetadata?.currentToolInputPreview, openCodeMetadata?.currentToolInputPreview, cursorMetadata?.currentToolInputPreview, piMetadata?.currentToolInputPreview)
+        codexMetadata?.currentCommandPreview ?? claudeMetadata?.currentToolInputPreview ?? openCodeMetadata?.currentToolInputPreview ?? cursorMetadata?.currentToolInputPreview ?? piMetadata?.currentToolInputPreview
     }
-}
-
-private func firstNonNil<T>(_ values: T?...) -> T? {
-    for value in values {
-        if let value {
-            return value
-        }
-    }
-    return nil
 }
 
 private extension AgentSession {

@@ -11,7 +11,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case sound
     case appearance
     case watch
-    case signalLight
     case shortcuts
     case lab
     case about
@@ -26,7 +25,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .display:    lang.t("settings.tab.display")
         case .sound:      lang.t("settings.tab.sound")
         case .watch:      "Watch"
-        case .signalLight: lang.t("settings.tab.signalLight")
         case .shortcuts:  lang.t("settings.tab.shortcuts")
         case .lab:        lang.t("settings.tab.lab")
         case .about:      lang.t("settings.tab.about")
@@ -41,7 +39,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .display:    "textformat.size"
         case .sound:      "speaker.wave.2.fill"
         case .watch:      "applewatch"
-        case .signalLight: "light.beacon.max.fill"
         case .shortcuts:  "keyboard.fill"
         case .lab:        "flask.fill"
         case .about:      "info.circle.fill"
@@ -56,7 +53,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .display:    .blue
         case .sound:      .green
         case .watch:      .cyan
-        case .signalLight: .yellow
         case .shortcuts:  .gray
         case .lab:        .pink
         case .about:      .blue
@@ -65,8 +61,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var section: SettingsSection {
         switch self {
-        case .general, .setup, .display, .sound, .appearance, .watch, .signalLight: .system
-        case .shortcuts, .lab:                                                      .advanced
+        case .general, .setup, .display, .sound, .appearance, .watch: .system
+        case .shortcuts, .lab:                                        .advanced
         case .about:                                                  .app
         }
     }
@@ -81,7 +77,7 @@ enum SettingsSection: String, CaseIterable {
         switch self {
         case .system:   lang.t("settings.section.system")
         case .advanced: lang.t("settings.section.advanced")
-        case .app:      "WG Open Island"
+        case .app:      "Open Island"
         }
     }
 
@@ -152,8 +148,6 @@ struct SettingsView: View {
                 SoundSettingsPane(model: model)
             case .watch:
                 WatchSettingsPane(model: model)
-            case .signalLight:
-                SignalLightSettingsPane(model: model)
             case .shortcuts:
                 PlaceholderSettingsPane(model: model, titleKey: "settings.tab.shortcuts", subtitleKey: "settings.shortcuts.comingSoon")
             case .lab:
@@ -432,9 +426,9 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallGemini = false
     @State private var confirmingUninstallKimi = false
     @State private var confirmingUninstallGrok = false
+    @State private var confirmingUninstallZcode = false
     @State private var confirmingUninstallPi = false
     @State private var confirmingUninstallOhMyPi = false
-    @State private var confirmingUninstallHermes = false
     @State private var confirmingUninstallClaudeUsage = false
 
     private var lang: LanguageManager { model.lang }
@@ -639,6 +633,23 @@ struct SetupSettingsPane: View {
                 }
 
                 hookRow(
+                    name: "ZCode",
+                    installed: model.zcodeHooksInstalled,
+                    busy: model.isZcodeHookSetupBusy,
+                    configLocationURL: model.zcodeHookStatus?.configURL,
+                    installAction: { model.installZcodeHooks() },
+                    uninstallAction: { confirmingUninstallZcode = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallZcode) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallZcodeHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.zcode/cli/config.json.")
+                }
+
+                hookRow(
                     name: "Pi",
                     installed: model.piExtensionInstalled,
                     busy: model.isPiSetupBusy,
@@ -672,23 +683,6 @@ struct SetupSettingsPane: View {
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
                     Text("This will remove the Open Island extension from ~/.omp/agent/extensions/.")
-                }
-
-                hookRow(
-                    name: "Hermes",
-                    installed: model.hermesHooksInstalled,
-                    busy: model.isHermesHookSetupBusy,
-                    configLocationURL: hermesHookConfigURL,
-                    installAction: { model.installHermesHooks() },
-                    uninstallAction: { confirmingUninstallHermes = true }
-                )
-                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallHermes) {
-                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
-                        model.uninstallHermesHooks()
-                    }
-                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
-                } message: {
-                    Text("This will remove Open Island hooks from ~/.hermes/config.yaml.")
                 }
             }
 
@@ -768,7 +762,7 @@ struct SetupSettingsPane: View {
                     if !model.geminiHooksInstalled { model.installGeminiHooks() }
                     if !model.kimiHooksInstalled { model.installKimiHooks() }
                     if !model.grokHooksInstalled { model.installGrokHooks() }
-                    if !model.hermesHooksInstalled { model.installHermesHooks() }
+                    if !model.zcodeHooksInstalled { model.installZcodeHooks() }
                     if !model.piExtensionInstalled { model.installPiExtension() }
                     if !model.ohMyPiExtensionInstalled { model.installOhMyPiExtension() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
@@ -833,7 +827,7 @@ struct SetupSettingsPane: View {
         model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
             && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
             && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled
-            && model.grokHooksInstalled && model.hermesHooksInstalled
+            && model.grokHooksInstalled && model.zcodeHooksInstalled
             && model.piExtensionInstalled && model.ohMyPiExtensionInstalled && model.claudeUsageInstalled
     }
 
@@ -871,11 +865,6 @@ struct SetupSettingsPane: View {
     private var geminiHookConfigURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".gemini/settings.json")
-    }
-
-    private var hermesHookConfigURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".hermes/config.yaml")
     }
 
     private var hasErrors: Bool {

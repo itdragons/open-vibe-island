@@ -31,9 +31,6 @@ final class AppModel {
     private static let legacyIslandSessionSortDefaultsKey = "appearance.island.v8.sessionSort"
     private static let legacyCompletedStaleThresholdDefaultsKey = "appearance.island.v8.completedStaleThreshold"
     private static let appearanceProfileSettingsDefaultsKey = "appearance.island.v8.settingsProfile"
-    private static let signalLightEffectsDefaultsKey = "signalLight.effects"
-    private static let signalLightBrightnessDefaultsKey = "signalLight.brightness"
-    private static let signalLightEnabledDefaultsKey = "signalLight.enabled"
 
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
@@ -55,17 +52,8 @@ final class AppModel {
             _cachedSessionBuckets = nil
             pruneAgentsGridObservationTicketsIfNeeded()
             bridgeServer.updateStateSnapshot(state)
-
-            let bucket = SignalLightBucketResolver.resolve(state)
-            if bucket != lastSentSignalLightBucket {
-                lastSentSignalLightBucket = bucket
-                if signalLightEnabled && !signalLight.isCalibrating {
-                    signalLight.send(resolvedSignalLightEffect())
-                }
-            }
         }
     }
-    @ObservationIgnored private var lastSentSignalLightBucket: SignalLightBucket?
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
 
     /// Monotonic ticket assigned the first time a session ID shows up in the
@@ -82,7 +70,6 @@ final class AppModel {
     let discovery = SessionDiscoveryCoordinator()
     let monitoring = ProcessMonitoringCoordinator()
     let codexAppServer = CodexAppServerCoordinator()
-    let signalLight = SignalLightCoordinator()
     let updateChecker = UpdateChecker()
 
     var notchStatus: NotchStatus {
@@ -147,11 +134,6 @@ final class AppModel {
     var geminiHookStatus: GeminiHookInstallationStatus? { hooks.geminiHookStatus }
     var geminiHookStatusTitle: String { hooks.geminiHookStatusTitle }
     var geminiHookStatusSummary: String { hooks.geminiHookStatusSummary }
-    var hermesHooksInstalled: Bool { hooks.hermesHooksInstalled }
-    var isHermesHookSetupBusy: Bool { hooks.isHermesHookSetupBusy }
-    var hermesHookStatus: HermesHookInstallationStatus? { hooks.hermesHookStatus }
-    var hermesHookStatusTitle: String { hooks.hermesHookStatusTitle }
-    var hermesHookStatusSummary: String { hooks.hermesHookStatusSummary }
     var kimiHooksInstalled: Bool { hooks.kimiHooksInstalled }
     var isKimiHookSetupBusy: Bool { hooks.isKimiHookSetupBusy }
     var kimiHookStatus: KimiHookInstallationStatus? { hooks.kimiHookStatus }
@@ -162,6 +144,9 @@ final class AppModel {
     var grokHookStatus: GrokHookInstallationStatus? { hooks.grokHookStatus }
     var grokHookStatusTitle: String { hooks.grokHookStatusTitle }
     var grokHookStatusSummary: String { hooks.grokHookStatusSummary }
+    var zcodeHooksInstalled: Bool { hooks.zcodeHooksInstalled }
+    var isZcodeHookSetupBusy: Bool { hooks.isZcodeHookSetupBusy }
+    var zcodeHookStatus: ZCodeHookInstallationStatus? { hooks.zcodeHookStatus }
     var piExtensionInstalled: Bool { hooks.piExtensionInstalled }
     var ohMyPiExtensionInstalled: Bool { hooks.ohMyPiExtensionInstalled }
     var isPiSetupBusy: Bool { hooks.isPiSetupBusy }
@@ -195,7 +180,7 @@ final class AppModel {
             || hooks.geminiHooksInstalled
             || hooks.kimiHooksInstalled
             || hooks.grokHooksInstalled
-            || hooks.hermesHooksInstalled
+            || hooks.zcodeHooksInstalled
             || hooks.piExtensionInstalled
             || hooks.ohMyPiExtensionInstalled
     }
@@ -231,8 +216,9 @@ final class AppModel {
     func refreshGrokHookStatus() { hooks.refreshGrokHookStatus() }
     func installGrokHooks() { hooks.installGrokHooks() }
     func uninstallGrokHooks() { hooks.uninstallGrokHooks() }
-    func installHermesHooks() { hooks.installHermesHooks() }
-    func uninstallHermesHooks() { hooks.uninstallHermesHooks() }
+    func refreshZcodeHookStatus() { hooks.refreshZcodeHookStatus() }
+    func installZcodeHooks() { hooks.installZcodeHooks() }
+    func uninstallZcodeHooks() { hooks.uninstallZcodeHooks() }
     func refreshPiExtensionStatuses() { hooks.refreshPiExtensionStatuses() }
     func installPiExtension() { hooks.installPiExtension() }
     func uninstallPiExtension() { hooks.uninstallPiExtension() }
@@ -500,45 +486,6 @@ final class AppModel {
         }
     }
 
-    var signalLightEffects: [SignalLightBucket: SignalLightEffect] = AppModel.loadSignalLightEffects() {
-        didSet {
-            guard let data = try? JSONEncoder().encode(signalLightEffects) else {
-                return
-            }
-            UserDefaults.standard.set(data, forKey: Self.signalLightEffectsDefaultsKey)
-
-            // If the edit changed the effect for whichever bucket is
-            // currently showing, push it immediately instead of waiting for
-            // the next session-state transition — otherwise editing e.g.
-            // idle's effect while already idle looks like it did nothing.
-            let bucket = SignalLightBucketResolver.resolve(state)
-            if signalLightEnabled, !signalLight.isCalibrating, signalLightEffects[bucket] != oldValue[bucket] {
-                signalLight.send(signalLightEffects[bucket] ?? .defaultEffect(for: bucket))
-            }
-        }
-    }
-
-    var signalLightBrightness: Int = AppModel.loadSignalLightBrightness() {
-        didSet {
-            guard signalLightBrightness != oldValue else { return }
-            UserDefaults.standard.set(signalLightBrightness, forKey: Self.signalLightBrightnessDefaultsKey)
-            signalLight.sendRaw(SignalLightControlCommand.brightness(percent: signalLightBrightness))
-        }
-    }
-
-    var signalLightEnabled: Bool = AppModel.loadSignalLightEnabled() {
-        didSet {
-            guard signalLightEnabled != oldValue else { return }
-            UserDefaults.standard.set(signalLightEnabled, forKey: Self.signalLightEnabledDefaultsKey)
-            signalLight.isLightSwitchedOn = signalLightEnabled
-            if signalLightEnabled {
-                signalLight.send(resolvedSignalLightEffect())
-            } else {
-                signalLight.sendRaw(SignalLightControlCommand.off)
-            }
-        }
-    }
-
     @ObservationIgnored
     private(set) var watchRelay: WatchNotificationRelay?
 
@@ -675,33 +622,6 @@ final class AppModel {
         )
     }
 
-    private static func loadSignalLightEffects() -> [SignalLightBucket: SignalLightEffect] {
-        if let data = UserDefaults.standard.data(forKey: signalLightEffectsDefaultsKey),
-           let decoded = try? JSONDecoder().decode([SignalLightBucket: SignalLightEffect].self, from: data) {
-            return decoded
-        }
-        return Dictionary(uniqueKeysWithValues: SignalLightBucket.allCases.map { ($0, .defaultEffect(for: $0)) })
-    }
-
-    private static func loadSignalLightBrightness() -> Int {
-        guard UserDefaults.standard.object(forKey: signalLightBrightnessDefaultsKey) != nil else {
-            return 100
-        }
-        return UserDefaults.standard.integer(forKey: signalLightBrightnessDefaultsKey)
-    }
-
-    private static func loadSignalLightEnabled() -> Bool {
-        guard UserDefaults.standard.object(forKey: signalLightEnabledDefaultsKey) != nil else {
-            return true
-        }
-        return UserDefaults.standard.bool(forKey: signalLightEnabledDefaultsKey)
-    }
-
-    private func resolvedSignalLightEffect() -> SignalLightEffect {
-        let bucket = SignalLightBucketResolver.resolve(state)
-        return signalLightEffects[bucket] ?? .defaultEffect(for: bucket)
-    }
-
     init(
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
             try TerminalJumpService().jump(to: target)
@@ -763,14 +683,6 @@ final class AppModel {
         hooks.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }
-
-        signalLight.currentEffectProvider = { [weak self] in
-            self?.resolvedSignalLightEffect()
-        }
-        signalLight.currentBrightnessProvider = { [weak self] in
-            self?.signalLightBrightness
-        }
-        signalLight.isLightSwitchedOn = signalLightEnabled
 
         discovery.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
         discovery.onStatusMessage = { [weak self] message in
@@ -1681,7 +1593,6 @@ final class AppModel {
                 case let .openCodeSessionMetadataUpdated(p): return p.sessionID
                 case let .cursorSessionMetadataUpdated(p): return p.sessionID
                 case let .piSessionMetadataUpdated(p): return p.sessionID
-                case let .hermesSessionMetadataUpdated(p): return p.sessionID
                 case let .sessionHeartbeat(p): return p.sessionID
                 case let .actionableStateResolved(p): return p.sessionID
                 }
@@ -1816,7 +1727,7 @@ final class AppModel {
             if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }
             if self.hooks.shouldAutoInstall(.kimi) { self.installKimiHooks() }
             if self.hooks.shouldAutoInstall(.grok) { self.installGrokHooks() }
-            if self.hooks.shouldAutoInstall(.hermes) { self.installHermesHooks() }
+            if self.hooks.shouldAutoInstall(.zcode) { self.installZcodeHooks() }
             if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
 
             // Run health checks after install to detect stale paths, conflicts, etc.
@@ -1976,8 +1887,6 @@ final class AppModel {
                 return "\(state.session(id: payload.sessionID)?.tool.displayName ?? "Pi") is running \(currentTool)."
             }
             return payload.piMetadata.lastAssistantMessage ?? "Pi session metadata updated."
-        case let .hermesSessionMetadataUpdated(payload):
-            return payload.hermesMetadata.lastAssistantMessage ?? "Hermes session metadata updated."
         case let .sessionHeartbeat(payload):
             return "Heartbeat received for session \(payload.sessionID)."
         case let .actionableStateResolved(payload):

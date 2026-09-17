@@ -29,7 +29,7 @@ final class HookInstallationCoordinator {
     var geminiHookStatus: GeminiHookInstallationStatus?
     var kimiHookStatus: KimiHookInstallationStatus?
     var grokHookStatus: GrokHookInstallationStatus?
-    var hermesHookStatus: HermesHookInstallationStatus?
+    var zcodeHookStatus: ZCodeHookInstallationStatus?
     var piExtensionStatus: PiExtensionInstallationStatus?
     var ohMyPiExtensionStatus: PiExtensionInstallationStatus?
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
@@ -47,7 +47,7 @@ final class HookInstallationCoordinator {
     var isGeminiHookSetupBusy = false
     var isKimiHookSetupBusy = false
     var isGrokHookSetupBusy = false
-    var isHermesHookSetupBusy = false
+    var isZcodeHookSetupBusy = false
     var isPiSetupBusy = false
     var isOhMyPiSetupBusy = false
     var isClaudeUsageSetupBusy = false
@@ -103,7 +103,7 @@ final class HookInstallationCoordinator {
     private let grokHookInstallationManager = GrokHookInstallationManager()
 
     @ObservationIgnored
-    private let hermesHookInstallationManager = HermesHookInstallationManager()
+    private let zcodeHookInstallationManager = ZCodeHookInstallationManager()
     private let piExtensionInstallationManager: PiExtensionInstallationManager
 
     @ObservationIgnored
@@ -173,8 +173,8 @@ final class HookInstallationCoordinator {
         grokHookStatus?.managedHooksPresent == true
     }
 
-    var hermesHooksInstalled: Bool {
-        hermesHookStatus?.managedHooksPresent == true
+    var zcodeHooksInstalled: Bool {
+        zcodeHookStatus?.managedHooksPresent == true
     }
 
     var piExtensionInstalled: Bool {
@@ -430,6 +430,18 @@ final class HookInstallationCoordinator {
         return "Grok hooks not installed"
     }
 
+    var zcodeHookStatusTitle: String {
+        if zcodeHooksInstalled {
+            return "ZCode hooks installed"
+        }
+
+        if hooksBinaryURL == nil {
+            return "Hook binary not found"
+        }
+
+        return "ZCode hooks not installed"
+    }
+
     var grokHookStatusSummary: String {
         guard grokHookStatus != nil else {
             return "Reading ~/.grok/hooks/open-island.json."
@@ -446,24 +458,12 @@ final class HookInstallationCoordinator {
         return "no managed Grok hooks"
     }
 
-    var hermesHookStatusTitle: String {
-        if hermesHooksInstalled {
-            return "Hermes hooks installed"
+    var zcodeHookStatusSummary: String {
+        guard zcodeHookStatus != nil else {
+            return "Reading ~/.zcode/cli/config.json."
         }
 
-        if hooksBinaryURL == nil {
-            return "Hook binary not found"
-        }
-
-        return "Hermes hooks not installed"
-    }
-
-    var hermesHookStatusSummary: String {
-        guard hermesHookStatus != nil else {
-            return "Reading ~/.hermes/config.yaml."
-        }
-
-        if hermesHooksInstalled {
+        if zcodeHooksInstalled {
             return "managed hooks present"
         }
 
@@ -471,7 +471,7 @@ final class HookInstallationCoordinator {
             return "Build OpenIslandHooks before installing."
         }
 
-        return "no managed Hermes hooks"
+        return "no managed ZCode hooks"
     }
 
     var codexHookStatusTitle: String {
@@ -802,10 +802,10 @@ final class HookInstallationCoordinator {
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
                 do {
-                    let status = try self.hermesHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
-                    self.hermesHookStatus = status
+                    let status = try self.zcodeHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
+                    self.zcodeHookStatus = status
                 } catch {
-                    self.onStatusMessage?("Failed to read Hermes hook status: \(error.localizedDescription)")
+                    self.onStatusMessage?("Failed to read ZCode hook status: \(error.localizedDescription)")
                 }
             }
 
@@ -881,15 +881,15 @@ final class HookInstallationCoordinator {
         }
     }
 
-    func refreshHermesHookStatus() {
+    func refreshZcodeHookStatus() {
         Task { [weak self] in
             guard let self else { return }
 
             do {
-                let status = try self.hermesHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
-                self.hermesHookStatus = status
+                let status = try self.zcodeHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
+                self.zcodeHookStatus = status
             } catch {
-                self.onStatusMessage?("Failed to read Hermes hook status: \(error.localizedDescription)")
+                self.onStatusMessage?("Failed to read ZCode hook status: \(error.localizedDescription)")
             }
         }
     }
@@ -992,9 +992,9 @@ final class HookInstallationCoordinator {
         case .gemini: return !geminiHooksInstalled
         case .kimi: return !kimiHooksInstalled
         case .grok: return !grokHooksInstalled
+        case .zcode: return !zcodeHooksInstalled
         case .pi: return !(piExtensionStatus?.isCurrent ?? false)
         case .ohMyPi: return !(ohMyPiExtensionStatus?.isCurrent ?? false)
-        case .hermes: return !hermesHooksInstalled
         case .claudeUsageBridge: return !claudeUsageInstalled
         }
     }
@@ -1020,9 +1020,9 @@ final class HookInstallationCoordinator {
             case .gemini: return geminiHooksInstalled
             case .kimi: return kimiHooksInstalled
             case .grok: return grokHooksInstalled
+            case .zcode: return zcodeHooksInstalled
             case .pi: return piExtensionInstalled
             case .ohMyPi: return ohMyPiExtensionInstalled
-            case .hermes: return hermesHooksInstalled
             case .claudeUsageBridge: return claudeUsageInstalled
             }
         }
@@ -1251,19 +1251,19 @@ final class HookInstallationCoordinator {
         }
     }
 
-    func installHermesHooks() {
+    func installZcodeHooks() {
         guard let hooksBinaryURL else {
             onStatusMessage?("Could not find a local OpenIslandHooks binary. Build the package first.")
             return
         }
 
-        updateHermesHooks(userMessage: "Installing Hermes hooks.", intent: .installed) { manager in
+        updateZcodeHooks(userMessage: "Installing ZCode hooks.", intent: .installed) { manager in
             try manager.install(hooksBinaryURL: hooksBinaryURL)
         }
     }
 
-    func uninstallHermesHooks() {
-        updateHermesHooks(userMessage: "Removing Hermes hooks.", intent: .uninstalled) { manager in
+    func uninstallZcodeHooks() {
+        updateZcodeHooks(userMessage: "Removing ZCode hooks.", intent: .uninstalled) { manager in
             try manager.uninstall()
         }
     }
@@ -1382,10 +1382,8 @@ final class HookInstallationCoordinator {
             guard let self else { return }
 
             while !Task.isCancelled {
-                if self.claudeUsageInstalled || ProcessMonitoringCoordinator.isClaudeDesktopAppRunning() {
-                    self.refreshClaudeUsageState()
-                }
-                try? await Task.sleep(for: .seconds(30))
+                self.refreshClaudeUsageState()
+                try? await Task.sleep(for: .seconds(5))
             }
         }
     }
@@ -1597,30 +1595,30 @@ final class HookInstallationCoordinator {
         }
     }
 
-    private func updateHermesHooks(
+    private func updateZcodeHooks(
         userMessage: String,
         intent: AgentHookIntent,
-        operation: @escaping (HermesHookInstallationManager) throws -> HermesHookInstallationStatus
+        operation: @escaping (ZCodeHookInstallationManager) throws -> ZCodeHookInstallationStatus
     ) {
-        isHermesHookSetupBusy = true
+        isZcodeHookSetupBusy = true
         onStatusMessage?(userMessage)
 
         Task { [weak self] in
             guard let self else { return }
 
-            defer { self.isHermesHookSetupBusy = false }
+            defer { self.isZcodeHookSetupBusy = false }
 
             do {
-                let status = try operation(self.hermesHookInstallationManager)
-                self.hermesHookStatus = status
-                self.intentStore.setIntent(intent, for: .hermes)
+                let status = try operation(self.zcodeHookInstallationManager)
+                self.zcodeHookStatus = status
+                self.intentStore.setIntent(intent, for: .zcode)
                 if status.managedHooksPresent {
-                    self.onStatusMessage?("Hermes hooks are installed and ready.")
+                    self.onStatusMessage?("ZCode hooks are installed and ready.")
                 } else {
-                    self.onStatusMessage?("Hermes hooks are not installed.")
+                    self.onStatusMessage?("ZCode hooks are not installed.")
                 }
             } catch {
-                self.onStatusMessage?("Hermes hook update failed: \(error.localizedDescription)")
+                self.onStatusMessage?("ZCode hook update failed: \(error.localizedDescription)")
             }
         }
     }
