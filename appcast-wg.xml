@@ -7,6 +7,29 @@
         <language>en</language>
         <!-- Items are added by .github/workflows/wg-release.yml via scripts/update-appcast-wg.sh -->
         <item>
+            <title>Version 1.0.8</title>
+            <sparkle:version>18</sparkle:version>
+            <sparkle:shortVersionString>1.0.8</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Fri, 09 Oct 2026 04:09:45 +0000</pubDate>
+            <description><![CDATA[
+                <ul>
+                    <li>同步 upstream v1.2.1 改动</li>
+                    <li>修复关闭的灵动岛可能吞掉桌面点击事件的问题</li>
+                    <li>优化灵动岛面板展开与收起过渡动画，视觉变形更丝滑</li>
+                    <li>优化通知点击跳转，支持直接定位到对应会话</li>
+                    <li>修复 Qoder 识别与跳转支持（com.qoder.app）</li>
+                    <li>优化 tmux 会话切换逻辑，跳过冗余 switch-client</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.8/WG.Open.Island-1.0.8.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="3sarqu/03yt0/Q17XKMGo/CAOyCyGV5/spPwxv3E0xv26gRNqoxZOC64vKIhKqglt+dVfdazL/ZyKUZhLGPHDA=="
+                length="13770186"
+            />
+        </item>
+        <item>
             <title>Version 1.0.7</title>
             <sparkle:version>17</sparkle:version>
             <sparkle:shortVersionString>1.0.7</sparkle:shortVersionString>
