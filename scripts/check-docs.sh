@@ -39,7 +39,7 @@ done < <(find docs -name '*.md' -type f | sort)
 
 while IFS= read -r file; do
     case "$file" in
-        docs/index.md|docs/review/*|docs/exec-plans/active/*|docs/exec-plans/completed/*)
+        docs/index.md|docs/review/*|docs/exec-plans/active/*|docs/exec-plans/completed/*|docs/superpowers/*)
             continue
             ;;
     esac

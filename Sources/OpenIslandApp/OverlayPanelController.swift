@@ -1,7 +1,10 @@
 import AppKit
 import Combine
+import OSLog
 import SwiftUI
 import OpenIslandCore
+
+private let overlayLog = Logger(subsystem: "app.openisland", category: "overlay")
 
 @MainActor
 final class OverlayPanelController {
@@ -33,6 +36,7 @@ final class OverlayPanelController {
 
     private var panel: NotchPanel?
     private var eventMonitors = NotchEventMonitors()
+    private var lastStrayClickRepair: Date = .distantPast
     private var hoverTimer: DispatchWorkItem?
     private var hoverCancelGrace: DispatchWorkItem?
     weak var model: AppModel?
@@ -141,6 +145,7 @@ final class OverlayPanelController {
         let hostingView = NotchHostingView(rootView: IslandPanelView(model: model))
         hostingView.notchController = self
         panel.contentView = hostingView
+        panel.notchController = self
 
         computeNotchRect(screen: resolveTargetScreen())
         return panel
@@ -223,6 +228,9 @@ final class OverlayPanelController {
 
     // MARK: - Mouse event monitoring
 
+    /// Registers the mouse monitors that drive hover-open, auto-collapse,
+    /// and click-outside dismissal. Skipped during deterministic harness
+    /// runs; a no-op while monitors are already active.
     private func startEventMonitoring() {
         if model?.disablesOverlayEventMonitoringDuringHarness == true {
             return
@@ -232,8 +240,8 @@ final class OverlayPanelController {
 
         eventMonitors.start { [weak self] location in
             self?.handleMouseMoved(location)
-        } mouseDownHandler: { [weak self] location in
-            self?.handleMouseDown(location)
+        } mouseDownHandler: { [weak self] location, isLocalEvent in
+            self?.handleMouseDown(location, isLocalEvent: isLocalEvent)
         }
     }
 
@@ -261,7 +269,12 @@ final class OverlayPanelController {
         }
     }
 
-    private func handleMouseDown(_ screenLocation: NSPoint) {
+    /// - Parameter isLocalEvent: Whether the click was delivered to this app
+    ///   (local monitor) or to another app (global monitor). Global monitors
+    ///   only observe — the clicked app already received the event — so the
+    ///   synthetic repost must be skipped there or it lands as a duplicate
+    ///   click (double-click word selection, double activation).
+    private func handleMouseDown(_ screenLocation: NSPoint, isLocalEvent: Bool) {
         guard let model else { return }
 
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
@@ -277,7 +290,15 @@ final class OverlayPanelController {
                     return
                 }
                 model.notchClose()
-                repostMouseDown(at: screenLocation)
+                // Repost only when our panel actually swallowed the original
+                // click: the event entered this app and landed inside the
+                // panel frame, so nothing under the cursor received it. When
+                // another app got the click (notification opened while the
+                // user works elsewhere), reposting injects a second click on
+                // top of the real one and the user's next click “jumps”.
+                if isLocalEvent, let panel, NSPointInRect(screenLocation, panel.frame) {
+                    repostMouseDown(at: screenLocation)
+                }
             }
         }
     }
@@ -666,8 +687,52 @@ final class OverlayPanelController {
         Array(sessions.prefix(Self.maxVisibleSessionRows))
     }
 
+    // MARK: - Stray clicks on a closed island
+
+    /// Minimum spacing between two repaired stray clicks. If the re-asserted
+    /// pass-through did not take, the reposted click would land on us again;
+    /// the throttle turns that into a dropped click instead of a loop.
+    private static let strayClickRepairInterval: TimeInterval = 0.5
+
+    /// Called by `NotchPanel` for every left mouse down it receives. While the
+    /// island is closed the panel is `ignoresMouseEvents`, so it should never
+    /// see a click outside the pill — yet occasionally it does (macOS keeps
+    /// routing clicks to the panel until it is re-ordered, and the user has to
+    /// expand and collapse the island to "unstick" the desktop underneath).
+    /// Re-assert pass-through, re-order the window so the change takes, and
+    /// forward the click to whatever is below. Returns `true` when the event
+    /// must not reach SwiftUI.
+    func panelReceivedMouseDown(_ event: NSEvent) -> Bool {
+        guard let panel, let model, model.notchStatus != .opened else { return false }
+
+        let screenPoint = NSEvent.mouseLocation
+        // A click on the pill itself is legitimate: the click monitor opens the island.
+        guard !isPointInClosedSurfaceArea(screenPoint) else { return false }
+
+        let now = Date()
+        let repost = now.timeIntervalSince(lastStrayClickRepair) > Self.strayClickRepairInterval
+        overlayLog.error(
+            "Closed island panel received a click at (\(screenPoint.x, privacy: .public), \(screenPoint.y, privacy: .public)); ignoresMouseEvents=\(panel.ignoresMouseEvents, privacy: .public) isKey=\(panel.isKeyWindow, privacy: .public) status=\(String(describing: model.notchStatus), privacy: .public) reason=\(String(describing: model.notchOpenReason), privacy: .public). Re-asserting pass-through\(repost ? " and reposting the click" : "", privacy: .public)."
+        )
+
+        panel.ignoresMouseEvents = false
+        panel.ignoresMouseEvents = true
+        panel.acceptsMouseMovedEvents = false
+        panel.orderFrontRegardless()
+
+        if repost {
+            lastStrayClickRepair = now
+            repostMouseDown(at: screenPoint)
+        }
+        return true
+    }
+
     // MARK: - Event reposting
 
+    /// Re-injects a synthetic click after the panel swallowed the original
+    /// one (event delivered to this app inside the panel frame). Callers must
+    /// not invoke this for clicks another app already received — the window
+    /// under the cursor would see two clicks and treat them as a double click.
     private func repostMouseDown(at screenPoint: NSPoint) {
         let flippedY = NSScreen.main.map { $0.frame.height - screenPoint.y } ?? screenPoint.y
 
@@ -695,6 +760,8 @@ final class OverlayPanelController {
 // MARK: - NotchPanel
 
 private final class NotchPanel: NSPanel {
+    weak var notchController: OverlayPanelController?
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
@@ -708,8 +775,13 @@ private final class NotchPanel: NSPanel {
     /// it is delivered on the first press, matching click-opened islands
     /// (presented with `makeKeyAndOrderFront`).
     override func sendEvent(_ event: NSEvent) {
-        if event.type == .leftMouseDown, !isKeyWindow, !ignoresMouseEvents {
-            makeKey()
+        if event.type == .leftMouseDown {
+            if notchController?.panelReceivedMouseDown(event) == true {
+                return
+            }
+            if !isKeyWindow, !ignoresMouseEvents {
+                makeKey()
+            }
         }
         super.sendEvent(event)
     }
@@ -813,9 +885,13 @@ final class NotchEventMonitors {
 
     var isActive: Bool { globalMoveMonitor != nil }
 
+    /// Registers throttled mouse-move monitors plus click monitors for both
+    /// event destinations. The click handler receives `isLocalEvent: true`
+    /// from the local monitor (event delivered to this app) and `false` from
+    /// the global monitor (event delivered to another app, observe-only).
     func start(
         mouseMoveHandler: @MainActor @escaping @Sendable (NSPoint) -> Void,
-        mouseDownHandler: @MainActor @escaping @Sendable (NSPoint) -> Void
+        mouseDownHandler: @MainActor @escaping @Sendable (NSPoint, _ isLocalEvent: Bool) -> Void
     ) {
         let throttleInterval: TimeInterval = 0.05
 
@@ -840,12 +916,12 @@ final class NotchEventMonitors {
 
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { event in
             let location = NSEvent.mouseLocation
-            Task { @MainActor in mouseDownHandler(location) }
+            Task { @MainActor in mouseDownHandler(location, false) }
         }
 
         localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             let location = NSEvent.mouseLocation
-            Task { @MainActor in mouseDownHandler(location) }
+            Task { @MainActor in mouseDownHandler(location, true) }
             return event
         }
     }
