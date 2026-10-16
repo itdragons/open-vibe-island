@@ -592,11 +592,11 @@ public extension AgentSession {
     }
 
     var currentToolName: String? {
-        codexMetadata?.currentTool ?? claudeMetadata?.currentTool ?? openCodeMetadata?.currentTool ?? cursorMetadata?.currentTool ?? piMetadata?.currentTool
+        firstNonNil(codexMetadata?.currentTool, claudeMetadata?.currentTool, openCodeMetadata?.currentTool, cursorMetadata?.currentTool, piMetadata?.currentTool)
     }
 
     var lastAssistantMessageText: String? {
-        codexMetadata?.lastAssistantMessage ?? claudeMetadata?.lastAssistantMessage ?? geminiMetadata?.lastAssistantMessage ?? openCodeMetadata?.lastAssistantMessage ?? cursorMetadata?.lastAssistantMessage ?? piMetadata?.lastAssistantMessage ?? hermesMetadata?.lastAssistantMessage
+        firstNonNil(codexMetadata?.lastAssistantMessage, claudeMetadata?.lastAssistantMessage, geminiMetadata?.lastAssistantMessage, openCodeMetadata?.lastAssistantMessage, cursorMetadata?.lastAssistantMessage, piMetadata?.lastAssistantMessage, hermesMetadata?.lastAssistantMessage)
     }
 
     var completionAssistantMessageText: String? {
@@ -614,20 +614,29 @@ public extension AgentSession {
     }
 
     var trackingTranscriptPath: String? {
-        codexMetadata?.transcriptPath ?? claudeMetadata?.transcriptPath ?? geminiMetadata?.transcriptPath ?? piMetadata?.transcriptPath
+        firstNonNil(codexMetadata?.transcriptPath, claudeMetadata?.transcriptPath, geminiMetadata?.transcriptPath, piMetadata?.transcriptPath)
     }
 
     var latestUserPromptText: String? {
-        codexMetadata?.lastUserPrompt ?? claudeMetadata?.lastUserPrompt ?? geminiMetadata?.lastUserPrompt ?? openCodeMetadata?.lastUserPrompt ?? cursorMetadata?.lastUserPrompt ?? piMetadata?.lastUserPrompt ?? hermesMetadata?.lastUserPrompt
+        firstNonNil(codexMetadata?.lastUserPrompt, claudeMetadata?.lastUserPrompt, geminiMetadata?.lastUserPrompt, openCodeMetadata?.lastUserPrompt, cursorMetadata?.lastUserPrompt, piMetadata?.lastUserPrompt, hermesMetadata?.lastUserPrompt)
     }
 
     var initialUserPromptText: String? {
-        codexMetadata?.initialUserPrompt ?? claudeMetadata?.initialUserPrompt ?? geminiMetadata?.initialUserPrompt ?? openCodeMetadata?.initialUserPrompt ?? cursorMetadata?.initialUserPrompt ?? piMetadata?.initialUserPrompt ?? hermesMetadata?.initialUserPrompt
+        firstNonNil(codexMetadata?.initialUserPrompt, claudeMetadata?.initialUserPrompt, geminiMetadata?.initialUserPrompt, openCodeMetadata?.initialUserPrompt, cursorMetadata?.initialUserPrompt, piMetadata?.initialUserPrompt, hermesMetadata?.initialUserPrompt)
     }
 
     var currentCommandPreviewText: String? {
-        codexMetadata?.currentCommandPreview ?? claudeMetadata?.currentToolInputPreview ?? openCodeMetadata?.currentToolInputPreview ?? cursorMetadata?.currentToolInputPreview ?? piMetadata?.currentToolInputPreview
+        firstNonNil(codexMetadata?.currentCommandPreview, claudeMetadata?.currentToolInputPreview, openCodeMetadata?.currentToolInputPreview, cursorMetadata?.currentToolInputPreview, piMetadata?.currentToolInputPreview)
     }
+}
+
+private func firstNonNil<T>(_ values: T?...) -> T? {
+    for value in values {
+        if let value {
+            return value
+        }
+    }
+    return nil
 }
 
 private extension AgentSession {

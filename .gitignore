@@ -18,11 +18,22 @@ Package.resolved
 
 # Local tooling artifacts
 .claude/
+.superpowers/
 .playwright-mcp/
 output/
 
 # Logs and temp files
 *.log
 *.tmp
+bridge.pid
 .worktrees/
 .air/
+
+.venv/
+.selected_device
+
+# Python compiled artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

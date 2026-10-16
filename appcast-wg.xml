@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>WG Open Island Updates</title>
+        <link>https://github.com/itdragons/open-vibe-island/releases</link>
+        <description>Most recent changes with links to updates.</description>
+        <language>en</language>
+        <!-- Items are added by .github/workflows/wg-release.yml via scripts/update-appcast-wg.sh -->
+        <item>
+            <title>Version 1.0.9</title>
+            <sparkle:version>19</sparkle:version>
+            <sparkle:shortVersionString>1.0.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Fri, 16 Oct 2026 03:00:17 +0000</pubDate>
+            <description><![CDATA[
+                <ul>
+                    <li>Merge main into wg</li>
+                    <li>- Add Hermes Agent integration with session, completion, question, and approval cards.</li>
+                    <li>- Add ZCode Desktop hook integration and app-process liveness.</li>
+                    <li>- Improve bridge decoding performance and filter Codex internal review sessions.</li>
+                    <li>- Harden Claude usage monitoring when Claude is unavailable.</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.9/WG.Open.Island-1.0.9.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="70tom92MgLnLEpQulHVSPKnWXy/Xh51TJoEPp6h+51PT2vLvqSmRKVqipu+zAfPNQZZN1ge6KAy7acAcrpPTCA=="
+                length="14521136"
+            />
+        </item>
+        <item>
+            <title>Version 1.0.7</title>
+            <sparkle:version>17</sparkle:version>
+            <sparkle:shortVersionString>1.0.7</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Thu, 10 Sep 2026 10:09:52 +0000</pubDate>
+            <description><![CDATA[
+                <ul>
+                    <li>新增 Grok Build、Pi、Oh My Pi 三个 agent 支持</li>
+                    <li>新增权限待处理时通知栏常驻,以及用量条多窗口展示</li>
+                    <li>修复 Codex 会话解析、多屏显示、悬浮窗点击等多处稳定性问题</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.7/WG.Open.Island-1.0.7.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="r4y5Yhb9gNkDRfJbceGk2Z40Sdgqj2FIN9VbEt9lSDcqXPs7szHoA+Q3ALiBVJ+NVFJouIzriU9hPbadCX3tCQ=="
+                length="13787045"
+            />
+        </item>
+        <item>
+            <title>Version 1.0.6</title>
+            <sparkle:version>16</sparkle:version>
+            <sparkle:shortVersionString>1.0.6</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Tue, 04 Aug 2026 10:31:16 +0000</pubDate>
+            <description><![CDATA[
+                <ul>
+                    <li>修复 Codex 会话增量读取的性能与稳定性问题</li>
+                    <li>修复 Kimi Hook 的 TOML 占位符冲突问题</li>
+                    <li>修复多显示器下悬浮窗显示位置识别问题</li>
+                    <li>Hook 标准错误输出现在会静默失败(不阻塞 agent 运行)</li>
+                    <li>修复 OpenCode 无 TTY 场景下的进程检测问题</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.6/WG.Open.Island-1.0.6.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="zo6evgPGkeWaPWzM6owme3prRrS12B0MsdsH9FtdvEz2pRQkOyA/UTCXf4QpA5864+heCTG3pBaTdhZUDZmfDw=="
+                length="12741033"
+            />
+        </item>
+        <item>
+            <title>Version 1.0.5</title>
+            <sparkle:version>15</sparkle:version>
+            <sparkle:shortVersionString>1.0.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Sat, 18 Jul 2026 05:32:42 +0000</pubDate>
+            <description><![CDATA[
+                <ul>
+                    <li>新增信号灯高电平点亮 LED 接线支持</li>
+                    <li>修复了一处可能导致插电款设备重启后卡死无法恢复的固件问题</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.5/WG.Open.Island-1.0.5.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="NBr77rIyrKFpnhCLnMTEYL9BUYPdmBzoAqqqLEhxzPvByv2/NQG4JBUe4K3+NFCXCPs0Hy3c9HY7qzZq1CytDw=="
+                length="12645104"
+            />
+        </item>
+        <item>
+            <title>Version 1.0.4</title>
+            <sparkle:version>12</sparkle:version>
+            <sparkle:shortVersionString>1.0.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Thu, 16 Jul 2026 08:47:10 +0000</pubDate>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.4/WG.Open.Island-1.0.4.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="v9qwQbFY/fOHcOdSBbnq2xnHdLv8UihnSSVw+m3TkO8+cueDIKH/TpZTLZs5fMNJZ0SEeNcleFcLogtqCfqmCQ=="
+                length="12628623"
+            />
+        </item>
+        <item>
+            <title>Version 1.0.3</title>
+            <sparkle:version>11</sparkle:version>
+            <sparkle:shortVersionString>1.0.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Sun, 12 Jul 2026 18:06:29 +0000</pubDate>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.3/WG.Open.Island-1.0.3.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="pdBSIIkO7rnARFikFP72WEuGVyv7ykDw+xs9ZVqshP+U+5nW0C7elPoBGJ03flmijFKJYK65zaqtRn0lPwbAAg=="
+                length="12611486"
+            />
+        </item>
+        <item>
+            <title>Version 1.0.2</title>
+            <sparkle:version>10</sparkle:version>
+            <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Sun, 12 Jul 2026 16:44:31 +0000</pubDate>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.2/WG.Open.Island.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="7FASJz7D/1WQ6d9hqSmJg/54hjUE/IBX1nsJ4Ic+uwDBQDOSfpvdE0NtM7fdaBuxSlLAiVyFXCpiLvrif6VhAA=="
+                length="12611487"
+            />
+        </item>
+        <item>
+            <title>Version 1.0.1</title>
+            <sparkle:version>5</sparkle:version>
+            <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Sun, 12 Jul 2026 15:38:05 +0000</pubDate>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.1/WG.Open.Island.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="H1HXAEhIJ18gc0JR48yIvkyyhcsQ65rXycdBZHqOPtt1nhkxo4MOBXazfexYpDZT35iUNocz6KMMpdjTpiJaBQ=="
+                length="12586721"
+            />
+        </item>
+    </channel>
+</rss>

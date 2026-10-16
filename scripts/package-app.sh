@@ -8,7 +8,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-app_name="${OPEN_ISLAND_APP_NAME:-Open Island}"
+app_name="${OPEN_ISLAND_APP_NAME:-WG Open Island}"
 bundle_identifier="${OPEN_ISLAND_BUNDLE_ID:-app.openisland.dev}"
 version="${OPEN_ISLAND_VERSION:-0.1.0}"
 build_number="${OPEN_ISLAND_BUILD_NUMBER:-$(git -C "$repo_root" rev-list --count HEAD 2>/dev/null || echo 1)}"
@@ -18,6 +18,7 @@ zip_path="${OPEN_ISLAND_ZIP_PATH:-$package_root/$app_name.zip}"
 dmg_path="${OPEN_ISLAND_DMG_PATH:-$package_root/$app_name.dmg}"
 signing_identity="${OPEN_ISLAND_SIGN_IDENTITY:-}"
 notary_profile="${OPEN_ISLAND_NOTARY_PROFILE:-}"
+sparkle_feed_url="${OPEN_ISLAND_SPARKLE_FEED_URL:-https://raw.githubusercontent.com/Octane0411/open-vibe-island/main/appcast.xml}"
 
 brand_script="$repo_root/scripts/generate_brand_icons.py"
 dmg_bg_script="$repo_root/scripts/generate_dmg_background.py"
@@ -120,12 +121,14 @@ cat > "$bundle_dir/Contents/Info.plist" <<EOF
     <string>14.0</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>Open Island needs automation access to focus Terminal and iTerm sessions for jump-back.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Open Island uses Bluetooth to connect to your optional signal light device.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>SUFeedURL</key>
-    <string>https://raw.githubusercontent.com/Octane0411/open-vibe-island/main/appcast.xml</string>
+    <string>$sparkle_feed_url</string>
     <key>SUPublicEDKey</key>
     <string>${OPEN_ISLAND_EDDSA_PUBLIC_KEY:-3IF8txq9RRNanzE2FNhyGRcwhslTucCcJHpTkpxcgBQ=}</string>
 </dict>

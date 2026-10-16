@@ -1,0 +1,185 @@
+name: WG Release
+
+on:
+  push:
+    tags:
+      - 'wg-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 1.2.1-dev1 (tag will be wg-v<version>)'
+        required: true
+      release_notes:
+        description: 'Release notes, one bullet per line (shown in the in-app update dialog).'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version and tag
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ github.event.inputs.version }}"
+            tag="wg-v${version}"
+            git tag -a "$tag" -m "${{ github.event.inputs.release_notes }}"
+            git push origin "$tag"
+          else
+            tag="${GITHUB_REF_NAME}"
+            version="${tag#wg-v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          # Read the annotation via the GitHub API, not local git: a checkout of a
+          # tag-triggered run can resolve (peel) the tag straight to its commit, in
+          # which case `git for-each-ref` silently falls back to the commit message
+          # instead of the tag's own text. Querying the tag object directly sidesteps
+          # that. A lightweight tag has no tag object, so the second call 404s — that
+          # empty result is treated as "no description" by later steps, not an error.
+          tag_sha="$(gh api "repos/${{ github.repository }}/git/refs/tags/$tag" --jq '.object.sha')"
+          notes="$(gh api "repos/${{ github.repository }}/git/tags/$tag_sha" --jq '.message' 2>/dev/null || true)"
+          {
+            echo "release_notes<<EOF_RELEASE_NOTES"
+            echo "$notes"
+            echo "EOF_RELEASE_NOTES"
+          } >> "$GITHUB_OUTPUT"
+          # Single source of truth for the Sparkle zip: the local filename (with spaces)
+          # and the appcast enclosure URL (GitHub swaps spaces for periods) are both
+          # derived from one name, so they can never drift apart.
+          zip_name="WG Open Island-${version}.zip"
+          echo "zip_name=$zip_name" >> "$GITHUB_OUTPUT"
+          echo "zip_url=https://github.com/itdragons/open-vibe-island/releases/download/${tag}/${zip_name// /.}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: |
+          brew install create-dmg
+          pip3 install --break-system-packages Pillow
+
+      - name: Build and package (ad-hoc signed)
+        env:
+          OPEN_ISLAND_APP_NAME: "WG Open Island"
+          OPEN_ISLAND_BUNDLE_ID: "app.openisland.wg"
+          OPEN_ISLAND_VERSION: ${{ steps.version.outputs.version }}
+          OPEN_ISLAND_BUILD_NUMBER: ${{ github.run_number }}
+          OPEN_ISLAND_UNIVERSAL: "true"
+          OPEN_ISLAND_SPARKLE_FEED_URL: "https://raw.githubusercontent.com/itdragons/open-vibe-island/wg/appcast-wg.xml"
+          OPEN_ISLAND_EDDSA_PUBLIC_KEY: ${{ vars.WG_SPARKLE_PUBLIC_KEY }}
+          # DMG and ZIP filenames both carry the version. The zip is the Sparkle
+          # enclosure; its appcast URL is derived from this same name (version step's
+          # zip_url output), so filename and URL stay in lockstep.
+          OPEN_ISLAND_DMG_PATH: "${{ github.workspace }}/output/package/WG Open Island-${{ steps.version.outputs.version }}.dmg"
+          OPEN_ISLAND_ZIP_PATH: "${{ github.workspace }}/output/package/${{ steps.version.outputs.zip_name }}"
+        run: zsh scripts/package-app.sh
+
+      - name: Verify artifacts
+        run: |
+          test -f "output/package/${{ steps.version.outputs.zip_name }}"
+          test -f "output/package/WG Open Island-${{ steps.version.outputs.version }}.dmg"
+          ls -lh output/package/
+
+      - name: Verify ad-hoc code signature
+        run: |
+          bundle="output/package/WG Open Island.app"
+          codesign -dvv "$bundle"
+          codesign --verify --deep --strict --verbose=2 "$bundle"
+
+      - name: Verify bundle structure
+        run: |
+          bundle="output/package/WG Open Island.app"
+          for f in \
+            "Contents/MacOS/OpenIslandApp" \
+            "Contents/Helpers/OpenIslandHooks" \
+            "Contents/Helpers/OpenIslandSetup" \
+            "Contents/Resources/OpenIsland.icns" \
+            "Contents/Resources/OpenIsland_OpenIslandApp.bundle" \
+          ; do
+            if [[ ! -e "$bundle/$f" ]]; then
+              echo "::error::Missing required file: $f"
+              exit 1
+            fi
+          done
+          echo "Bundle structure OK"
+
+      - name: Sign update with EdDSA (Sparkle)
+        id: sparkle_sign
+        env:
+          SPARKLE_EDDSA_KEY: ${{ secrets.WG_SPARKLE_EDDSA_KEY }}
+        run: |
+          sign_tool=".build/artifacts/sparkle/Sparkle/bin/sign_update"
+          zip_path="output/package/${{ steps.version.outputs.zip_name }}"
+
+          if [[ -z "$SPARKLE_EDDSA_KEY" ]]; then
+            echo "::warning::SPARKLE_EDDSA_KEY not set — skipping appcast update"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          sign_output="$(echo "$SPARKLE_EDDSA_KEY" | "$sign_tool" "$zip_path" --ed-key-file -)"
+          ed_signature="$(echo "$sign_output" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
+          length="$(echo "$sign_output" | sed -n 's/.*length="\([^"]*\)".*/\1/p')"
+          echo "ed_signature=$ed_signature" >> "$GITHUB_OUTPUT"
+          echo "length=$length" >> "$GITHUB_OUTPUT"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release (draft)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NOTES: ${{ steps.version.outputs.release_notes }}
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          # Delete EVERY pre-existing release for this tag (a re-run, or concurrent
+          # runs, can leave multiple drafts). Keep the tag itself — it drives the run.
+          # gh release delete targets one release by tag; loop over the API to cover all.
+          for id in $(gh api "repos/${{ github.repository }}/releases" --paginate \
+                        --jq ".[] | select(.tag_name==\"$tag\") | .id"); do
+            echo "Deleting existing release $id for $tag"
+            gh api -X DELETE "repos/${{ github.repository }}/releases/$id"
+          done
+
+          notes_file="$(mktemp)"
+          if [[ -n "$RELEASE_NOTES" ]]; then
+            printf '%s\n\n' "$RELEASE_NOTES" >> "$notes_file"
+          fi
+          printf 'Unsigned/ad-hoc-signed build. Right-click → Open on first launch to bypass Gatekeeper. Please publish this draft promptly — the WG appcast will point at these assets once committed, and in-app "Check for Updates" will 404 until this release is published.\n' >> "$notes_file"
+
+          gh release create "$tag" \
+            --title "WG Open Island v${{ steps.version.outputs.version }}" \
+            --draft \
+            --notes-file "$notes_file" \
+            "output/package/WG Open Island-${{ steps.version.outputs.version }}.dmg#WG Open Island-${{ steps.version.outputs.version }}.dmg (macOS, Universal)" \
+            "output/package/${{ steps.version.outputs.zip_name }}#${{ steps.version.outputs.zip_name }} (macOS, Universal)"
+
+      - name: Update appcast-wg.xml on wg
+        if: steps.sparkle_sign.outputs.signed == 'true'
+        env:
+          RELEASE_NOTES: ${{ steps.version.outputs.release_notes }}
+        run: |
+          cp appcast-wg.xml /tmp/appcast-wg.xml
+          git fetch origin wg
+          git checkout wg
+          git pull --ff-only origin wg
+          cp /tmp/appcast-wg.xml appcast-wg.xml
+          notes_file="$(mktemp)"
+          printf '%s' "$RELEASE_NOTES" > "$notes_file"
+          zsh scripts/update-appcast-wg.sh \
+            "${{ steps.version.outputs.version }}" \
+            "${{ github.run_number }}" \
+            "${{ steps.sparkle_sign.outputs.ed_signature }}" \
+            "${{ steps.sparkle_sign.outputs.length }}" \
+            "${{ steps.version.outputs.zip_url }}" \
+            "$notes_file"
+          git add appcast-wg.xml
+          git commit -m "chore: update appcast-wg.xml for ${{ steps.version.outputs.tag }}"
+          git push origin wg

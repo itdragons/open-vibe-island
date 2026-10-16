@@ -54,15 +54,14 @@ struct TerminalJumpServiceTests {
         #expect(script.contains("if \"\" is \"\" then"))
     }
 
-    @Test
+    @Test(.enabled(
+        if: ProcessInfo.processInfo.environment["OPEN_ISLAND_RUN_GHOSTTY_JUMP_INTEGRATION"] == "1",
+        "Set OPEN_ISLAND_RUN_GHOSTTY_JUMP_INTEGRATION=1 to run live Ghostty jump verification."
+    ))
     func ghosttyJumpIntegrationMatchesFocusedTerminalForLiveSurfaces() throws {
-        guard ProcessInfo.processInfo.environment["OPEN_ISLAND_RUN_GHOSTTY_JUMP_INTEGRATION"] == "1" else {
-            try Test.cancel("Set OPEN_ISLAND_RUN_GHOSTTY_JUMP_INTEGRATION=1 to run live Ghostty jump verification.")
-        }
-
         let terminals = try liveGhosttyTerminals()
-        if terminals.isEmpty {
-            try Test.cancel("No live Ghostty terminals were found.")
+        guard !terminals.isEmpty else {
+            return
         }
 
         let service = TerminalJumpService()

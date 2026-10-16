@@ -8,6 +8,7 @@ This index is the repository map for humans and coding agents. Read these files 
 - [AGENTS.md](../AGENTS.md) for the repository workflow, commit policy, and worktree rules
 - [docs/roadmap.md](./roadmap.md) for the project roadmap and contribution focus areas
 - [docs/roadmap.zh-CN.md](./roadmap.zh-CN.md) for the Chinese roadmap and contribution focus areas
+- [docs/local-dev-guide.zh-CN.md](./local-dev-guide.zh-CN.md) for the Chinese local development guide
 - [docs/product.md](./product.md) for the product scope, supported agents, and terminals
 - [docs/architecture.md](./architecture.md) for the runtime shape and transport boundaries
 - [docs/quality.md](./quality.md) for the current harness contract and verification expectations
