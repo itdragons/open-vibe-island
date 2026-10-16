@@ -4,7 +4,8 @@ import UniformTypeIdentifiers
 import OpenIslandCore
 
 struct SignalLightSettingsPane: View {
-    @Bindable var model: AppModel
+    @Bindable var feature: SignalLightFeatureModel
+    let lang: LanguageManager
 
     @State private var selectedFirmwareURL: URL?
     @State private var isShowingFlashConfirmation = false
@@ -23,10 +24,9 @@ struct SignalLightSettingsPane: View {
     @State private var pendingUpdateVersion: String?
     @State private var pendingUpdateNotes: String?
 
-    private var lang: LanguageManager { model.lang }
 
     private var isTransferring: Bool {
-        switch model.signalLight.firmwareUpdater.state {
+        switch feature.signalLight.firmwareUpdater.state {
         case .transferring, .finishing:
             true
         default:
@@ -42,7 +42,7 @@ struct SignalLightSettingsPane: View {
         }
         .formStyle(.grouped)
         .navigationTitle(lang.t("settings.tab.signalLight"))
-        .onChange(of: model.signalLight.status) { _, newStatus in
+        .onChange(of: feature.signalLight.status) { _, newStatus in
             if case .connected = newStatus {
                 isShowingRenameReconnectNotice = false
             }
@@ -58,7 +58,7 @@ struct SignalLightSettingsPane: View {
         .sheet(isPresented: $isShowingChangelog) {
             changelogSheet
         }
-        .onChange(of: model.signalLight.firmwareUpdateChecker.state) { _, newState in
+        .onChange(of: feature.signalLight.firmwareUpdateChecker.state) { _, newState in
             if case .updateAvailable(let version, let notes) = newState {
                 pendingUpdateVersion = version
                 pendingUpdateNotes = notes
@@ -105,7 +105,7 @@ struct SignalLightSettingsPane: View {
                 statusBadge
             }
 
-            switch model.signalLight.status {
+            switch feature.signalLight.status {
             case .unauthorized:
                 unauthorizedBanner
             case .poweredOff:
@@ -114,13 +114,13 @@ struct SignalLightSettingsPane: View {
                     .foregroundStyle(.secondary)
             case .connected:
                 Button(lang.t("settings.signalLight.disconnect"), role: .destructive) {
-                    model.signalLight.disconnect()
+                    feature.signalLight.disconnect()
                 }
                 .disabled(isTransferring)
             default:
                 discoveredDevicesList
                 Button(lang.t("settings.signalLight.scan")) {
-                    model.signalLight.startScan()
+                    feature.signalLight.startScan()
                 }
             }
         }
@@ -135,7 +135,7 @@ struct SignalLightSettingsPane: View {
                 Button(lang.t("settings.signalLight.rename")) {
                     let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { return }
-                    model.signalLight.sendRaw(SignalLightControlCommand.setName(trimmed))
+                    feature.signalLight.sendRaw(SignalLightControlCommand.setName(trimmed))
                     isShowingRenameReconnectNotice = true
                     renameText = ""
                 }
@@ -153,18 +153,18 @@ struct SignalLightSettingsPane: View {
     @ViewBuilder
     private var lightSection: some View {
         Section(lang.t("settings.signalLight.lightSection")) {
-            Toggle(lang.t("settings.signalLight.lightSwitch"), isOn: $model.signalLightEnabled)
+            Toggle(lang.t("settings.signalLight.lightSwitch"), isOn: $feature.signalLightEnabled)
 
             HStack {
                 Text(lang.t("settings.signalLight.lightBrightness"))
                 Slider(
                     value: Binding(
-                        get: { Double(model.signalLightBrightness) },
-                        set: { model.signalLightBrightness = Int($0.rounded()) }
+                        get: { Double(feature.signalLightBrightness) },
+                        set: { feature.signalLightBrightness = Int($0.rounded()) }
                     ),
                     in: 0...100
                 )
-                Text("\(model.signalLightBrightness)%")
+                Text("\(feature.signalLightBrightness)%")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -178,8 +178,8 @@ struct SignalLightSettingsPane: View {
                     title: bucketTitle(bucket),
                     lang: lang,
                     effect: Binding(
-                        get: { model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket) },
-                        set: { model.signalLightEffects[bucket] = $0 }
+                        get: { feature.signalLightEffects[bucket] ?? .defaultEffect(for: bucket) },
+                        set: { feature.signalLightEffects[bucket] = $0 }
                     ),
                     isExpanded: Binding(
                         get: { expandedSignalLightBucket == bucket },
@@ -187,7 +187,7 @@ struct SignalLightSettingsPane: View {
                     ),
                     isTestDisabled: isTransferring,
                     onTest: { effect in
-                        model.signalLight.send(effect)
+                        feature.signalLight.send(effect)
                         testPreview = SignalLightTestPreview(bucket: bucket, effect: effect)
                         testTimeoutTask?.cancel()
                         testTimeoutTask = Task {
@@ -201,7 +201,7 @@ struct SignalLightSettingsPane: View {
             }
 
             Button(lang.t("settings.signalLight.resetDefaults")) {
-                model.signalLightEffects = Dictionary(
+                feature.signalLightEffects = Dictionary(
                     uniqueKeysWithValues: SignalLightBucket.allCases.map { ($0, .defaultEffect(for: $0)) }
                 )
             }
@@ -210,7 +210,7 @@ struct SignalLightSettingsPane: View {
 
     @ViewBuilder
     private var statusBadge: some View {
-        switch model.signalLight.status {
+        switch feature.signalLight.status {
         case .connected(let name):
             HStack(spacing: 4) {
                 Circle().fill(.green).frame(width: 7, height: 7)
@@ -258,17 +258,17 @@ struct SignalLightSettingsPane: View {
 
     @ViewBuilder
     private var discoveredDevicesList: some View {
-        if model.signalLight.discoveredDevices.isEmpty {
-            Text(model.signalLight.status == .scanning ? lang.t("settings.signalLight.searching") : lang.t("settings.signalLight.noDevicesFound"))
+        if feature.signalLight.discoveredDevices.isEmpty {
+            Text(feature.signalLight.status == .scanning ? lang.t("settings.signalLight.searching") : lang.t("settings.signalLight.noDevicesFound"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else {
-            ForEach(model.signalLight.discoveredDevices) { device in
+            ForEach(feature.signalLight.discoveredDevices) { device in
                 HStack {
                     Text(device.name)
                     Spacer()
                     Button(lang.t("settings.signalLight.connect")) {
-                        model.signalLight.connect(deviceID: device.id)
+                        feature.signalLight.connect(deviceID: device.id)
                     }
                 }
             }
@@ -285,17 +285,17 @@ struct SignalLightSettingsPane: View {
     }
 
     private var isSignalLightConnected: Bool {
-        if case .connected = model.signalLight.status { true } else { false }
+        if case .connected = feature.signalLight.status { true } else { false }
     }
 
     @ViewBuilder
     private var livePreviewRow: some View {
-        let bucket = testPreview?.bucket ?? SignalLightBucketResolver.resolve(model.state)
+        let bucket = testPreview?.bucket ?? feature.currentBucket
         let isNotConnected = testPreview == nil && !isSignalLightConnected
-        let isOff = testPreview == nil && !model.signalLightEnabled
+        let isOff = testPreview == nil && !feature.signalLightEnabled
         let effect = testPreview?.effect
             ?? (isNotConnected || isOff ? SignalLightEffect(type: .solid, colors: [], intervalMs: 0)
-                                         : (model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket)))
+                                         : (feature.signalLightEffects[bucket] ?? .defaultEffect(for: bucket)))
         HStack(spacing: 12) {
             SignalLightPreviewPill(effect: effect)
 
@@ -345,7 +345,7 @@ struct SignalLightSettingsPane: View {
 
                 if isDeviceManagementExpanded {
                     Group {
-                        if case .connected = model.signalLight.status {
+                        if case .connected = feature.signalLight.status {
                             VStack(alignment: .leading, spacing: 10) {
                                 renameRow
                                 Divider()
@@ -369,7 +369,7 @@ struct SignalLightSettingsPane: View {
     private func presentChangelog() {
         isShowingChangelog = true
         Task {
-            await model.signalLight.firmwareUpdateChecker.loadChangelog(hardware: model.signalLight.hardwareID)
+            await feature.signalLight.firmwareUpdateChecker.loadChangelog(hardware: feature.signalLight.hardwareID)
         }
     }
 
@@ -379,7 +379,7 @@ struct SignalLightSettingsPane: View {
             Text(lang.t("settings.signalLight.viewChangelog"))
                 .font(.headline)
 
-            switch model.signalLight.firmwareUpdateChecker.changelogState {
+            switch feature.signalLight.firmwareUpdateChecker.changelogState {
             case .idle, .loading:
                 ProgressView()
             case .failed(let reason):
@@ -419,7 +419,7 @@ struct SignalLightSettingsPane: View {
                 presentChangelog()
             } label: {
                 HStack(spacing: 3) {
-                    Text(model.signalLight.firmwareVersion ?? lang.t("settings.signalLight.firmwareVersionUnknown"))
+                    Text(feature.signalLight.firmwareVersion ?? lang.t("settings.signalLight.firmwareVersionUnknown"))
                     Image(systemName: "info.circle")
                         .font(.caption2)
                 }
@@ -441,11 +441,11 @@ struct SignalLightSettingsPane: View {
                 .font(.subheadline)
             Spacer()
             Picker("", selection: Binding(
-                get: { model.signalLight.lastDeviceConfig?.activeHigh ?? false },
+                get: { feature.signalLight.lastDeviceConfig?.activeHigh ?? false },
                 set: { newValue in
-                    model.signalLight.setLastKnownPolarity(activeHigh: newValue)
-                    model.signalLight.sendRaw(SignalLightControlCommand.setPolarity(activeHigh: newValue))
-                    model.signalLight.sendRaw(SignalLightControlCommand.getConfig)
+                    feature.signalLight.setLastKnownPolarity(activeHigh: newValue)
+                    feature.signalLight.sendRaw(SignalLightControlCommand.setPolarity(activeHigh: newValue))
+                    feature.signalLight.sendRaw(SignalLightControlCommand.getConfig)
                 }
             )) {
                 Text(lang.t("settings.signalLight.polarityLow")).tag(false)
@@ -486,7 +486,7 @@ struct SignalLightSettingsPane: View {
                     isPresented: $isShowingFlashConfirmation
                 ) {
                     Button(lang.t("settings.signalLight.firmwareConfirmAction"), role: .destructive) {
-                        model.signalLight.beginFirmwareUpdate(fileURL: selectedFirmwareURL)
+                        feature.signalLight.beginFirmwareUpdate(fileURL: selectedFirmwareURL)
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
@@ -511,7 +511,7 @@ struct SignalLightSettingsPane: View {
                     .foregroundStyle(.secondary)
             }
         } else {
-            switch model.signalLight.firmwareUpdateChecker.state {
+            switch feature.signalLight.firmwareUpdateChecker.state {
             case .idle, .updateAvailable:
                 Button(lang.t("settings.signalLight.checkForUpdates")) {
                     checkForFirmwareUpdates()
@@ -553,7 +553,7 @@ struct SignalLightSettingsPane: View {
 
     @ViewBuilder
     private var firmwareActionRow: some View {
-        switch model.signalLight.firmwareUpdater.state {
+        switch feature.signalLight.firmwareUpdater.state {
         case .idle:
             EmptyView()
 
@@ -604,7 +604,7 @@ struct SignalLightSettingsPane: View {
                 ProgressView()
             }
             Button(lang.t("settings.general.cancel"), role: .destructive) {
-                model.signalLight.cancelFirmwareUpdate()
+                feature.signalLight.cancelFirmwareUpdate()
             }
         }
     }
@@ -612,7 +612,7 @@ struct SignalLightSettingsPane: View {
     private func checkForFirmwareUpdates() {
         firmwareDownloadErrorMessage = nil
         Task {
-            await model.signalLight.firmwareUpdateChecker.checkForUpdates(hardware: model.signalLight.hardwareID, currentVersion: model.signalLight.firmwareVersion)
+            await feature.signalLight.firmwareUpdateChecker.checkForUpdates(hardware: feature.signalLight.hardwareID, currentVersion: feature.signalLight.firmwareVersion)
         }
     }
 
@@ -622,7 +622,7 @@ struct SignalLightSettingsPane: View {
         Task {
             defer { isDownloadingFirmwareUpdate = false }
             do {
-                let fileURL = try await model.signalLight.firmwareUpdateChecker.downloadLatestBinary()
+                let fileURL = try await feature.signalLight.firmwareUpdateChecker.downloadLatestBinary()
                 selectedFirmwareURL = fileURL
                 isShowingFlashConfirmation = true
             } catch {
@@ -655,19 +655,19 @@ struct SignalLightSettingsPane: View {
     // MARK: Wiring Calibration
 
     private func beginCalibration() {
-        if !model.signalLight.isCalibrating {
-            lightSwitchWasOnBeforeCalibration = model.signalLightEnabled
-            model.signalLightEnabled = false
+        if !feature.signalLight.isCalibrating {
+            lightSwitchWasOnBeforeCalibration = feature.signalLightEnabled
+            feature.signalLightEnabled = false
         }
         // Always clear the device before testing (including on "Redo") so a
         // leftover effect — the idle bucket's glow, or the previous run's
         // confirmation cycle — can't be mistaken for the pin under test.
-        model.signalLight.sendRaw(SignalLightControlCommand.off)
+        feature.signalLight.sendRaw(SignalLightControlCommand.off)
 
         let newWizard = SignalLightCalibrationWizard(candidatePins: SignalLightCalibrationWizard.defaultCandidatePins)
-        model.signalLight.isCalibrating = true
+        feature.signalLight.isCalibrating = true
         if let pin = newWizard.currentPin {
-            model.signalLight.sendRaw(SignalLightControlCommand.pinTest(pin: pin, on: true))
+            feature.signalLight.sendRaw(SignalLightControlCommand.pinTest(pin: pin, on: true))
         }
         wizard = newWizard
     }
@@ -675,7 +675,7 @@ struct SignalLightSettingsPane: View {
     private func recordCalibrationObservation(_ observation: SignalLightWizardObservation) {
         guard var current = wizard else { return }
         if let pin = current.currentPin {
-            model.signalLight.sendRaw(SignalLightControlCommand.pinTest(pin: pin, on: false))
+            feature.signalLight.sendRaw(SignalLightControlCommand.pinTest(pin: pin, on: false))
         }
         current.recordObservation(observation)
         wizard = current
@@ -683,47 +683,47 @@ struct SignalLightSettingsPane: View {
         if current.isFinished {
             applyCalibrationResult(current)
         } else if let nextPin = current.currentPin {
-            model.signalLight.sendRaw(SignalLightControlCommand.pinTest(pin: nextPin, on: true))
+            feature.signalLight.sendRaw(SignalLightControlCommand.pinTest(pin: nextPin, on: true))
         }
     }
 
     private func applyCalibrationResult(_ finished: SignalLightCalibrationWizard) {
         for (color, pin) in finished.mapping {
-            model.signalLight.sendRaw(SignalLightControlCommand.setPin(color: color, pin: pin))
+            feature.signalLight.sendRaw(SignalLightControlCommand.setPin(color: color, pin: pin))
         }
         // Restore the real light state immediately rather than leaving the
         // device on whatever PINTEST left it showing (typically dark) until
         // the user notices the "Done" confirmation screen and taps it — that
         // gap could look indistinguishable from a broken light.
         if lightSwitchWasOnBeforeCalibration {
-            let bucket = SignalLightBucketResolver.resolve(model.state)
-            model.signalLight.send(model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket))
+            let bucket = feature.currentBucket
+            feature.signalLight.send(feature.signalLightEffects[bucket] ?? .defaultEffect(for: bucket))
         } else {
-            model.signalLight.sendRaw(SignalLightControlCommand.off)
+            feature.signalLight.sendRaw(SignalLightControlCommand.off)
         }
     }
 
     private func closeCalibration() {
-        model.signalLight.isCalibrating = false
+        feature.signalLight.isCalibrating = false
         wizard = nil
-        model.signalLightEnabled = lightSwitchWasOnBeforeCalibration
+        feature.signalLightEnabled = lightSwitchWasOnBeforeCalibration
     }
 
     private func cancelCalibration() {
-        model.signalLight.isCalibrating = false
+        feature.signalLight.isCalibrating = false
         wizard = nil
-        model.signalLightEnabled = lightSwitchWasOnBeforeCalibration
+        feature.signalLightEnabled = lightSwitchWasOnBeforeCalibration
     }
 
     /// Restores the light to whatever it should be showing right now — the
     /// current bucket's effect if the light switch is on, or an explicit
     /// `OFF` if it's off. Used after a per-bucket test preview times out.
     private func resyncLightSwitchState() {
-        if model.signalLightEnabled {
-            let bucket = SignalLightBucketResolver.resolve(model.state)
-            model.signalLight.send(model.signalLightEffects[bucket] ?? .defaultEffect(for: bucket))
+        if feature.signalLightEnabled {
+            let bucket = feature.currentBucket
+            feature.signalLight.send(feature.signalLightEffects[bucket] ?? .defaultEffect(for: bucket))
         } else {
-            model.signalLight.sendRaw(SignalLightControlCommand.off)
+            feature.signalLight.sendRaw(SignalLightControlCommand.off)
         }
     }
 

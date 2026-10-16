@@ -153,7 +153,7 @@ struct SettingsView: View {
             case .watch:
                 WatchSettingsPane(model: model)
             case .signalLight:
-                SignalLightSettingsPane(model: model)
+                SignalLightSettingsPane(feature: model.signalLight, lang: model.lang)
             case .shortcuts:
                 PlaceholderSettingsPane(model: model, titleKey: "settings.tab.shortcuts", subtitleKey: "settings.shortcuts.comingSoon")
             case .lab:
