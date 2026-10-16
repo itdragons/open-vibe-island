@@ -8,6 +8,30 @@
         <!-- Items are added by .github/workflows/wg-release.yml via scripts/update-appcast-wg.sh -->
         <item>
             <title>Version 1.0.9</title>
+            <sparkle:version>24</sparkle:version>
+            <sparkle:shortVersionString>1.0.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Fri, 16 Oct 2026 04:22:50 +0000</pubDate>
+            <description><![CDATA[
+                <ul>
+                    <li>- 新增 Hermes Agent 集成，支持会话追踪、完成卡片、问题卡片和审批卡片。</li>
+                    <li>- 新增 ZCode Desktop 集成，支持 hooks、进程检测和应用跳转。</li>
+                    <li>- 优化 Bridge 大型 payload 解码性能。</li>
+                    <li>- 过滤 Codex 内部审查会话。</li>
+                    <li>- 修复 Claude 不存在时的用量监控问题。</li>
+                    <li>- 完善安装器、设置界面、进程监控。</li>
+                    <li>- 重构红绿灯模块，独立管理灯效配置与会话状态同步，减少与主应用的耦合。</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.9/WG.Open.Island-1.0.9.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="PFKzYveaxIiFaevv3DqnwsBxcws8ND6OEQYUd+IanMYkB+4Cy44f8p2Nx1F5BwmebPSY232H0F+V2DPzSdAgAQ=="
+                length="14520353"
+            />
+        </item>
+        <item>
+            <title>Version 1.0.9</title>
             <sparkle:version>23</sparkle:version>
             <sparkle:shortVersionString>1.0.9</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
