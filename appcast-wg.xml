@@ -7,26 +7,25 @@
         <language>en</language>
         <!-- Items are added by .github/workflows/wg-release.yml via scripts/update-appcast-wg.sh -->
         <item>
-            <title>Version 1.0.8</title>
-            <sparkle:version>18</sparkle:version>
-            <sparkle:shortVersionString>1.0.8</sparkle:shortVersionString>
+            <title>Version 1.0.9</title>
+            <sparkle:version>19</sparkle:version>
+            <sparkle:shortVersionString>1.0.9</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <pubDate>Fri, 09 Oct 2026 04:09:45 +0000</pubDate>
+            <pubDate>Fri, 16 Oct 2026 03:00:17 +0000</pubDate>
             <description><![CDATA[
                 <ul>
-                    <li>同步 upstream v1.2.1 改动</li>
-                    <li>修复关闭的灵动岛可能吞掉桌面点击事件的问题</li>
-                    <li>优化灵动岛面板展开与收起过渡动画，视觉变形更丝滑</li>
-                    <li>优化通知点击跳转，支持直接定位到对应会话</li>
-                    <li>修复 Qoder 识别与跳转支持（com.qoder.app）</li>
-                    <li>优化 tmux 会话切换逻辑，跳过冗余 switch-client</li>
+                    <li>Merge main into wg</li>
+                    <li>- Add Hermes Agent integration with session, completion, question, and approval cards.</li>
+                    <li>- Add ZCode Desktop hook integration and app-process liveness.</li>
+                    <li>- Improve bridge decoding performance and filter Codex internal review sessions.</li>
+                    <li>- Harden Claude usage monitoring when Claude is unavailable.</li>
                 </ul>
             ]]></description>
             <enclosure
-                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.8/WG.Open.Island-1.0.8.zip"
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.9/WG.Open.Island-1.0.9.zip"
                 type="application/octet-stream"
-                sparkle:edSignature="3sarqu/03yt0/Q17XKMGo/CAOyCyGV5/spPwxv3E0xv26gRNqoxZOC64vKIhKqglt+dVfdazL/ZyKUZhLGPHDA=="
-                length="13770186"
+                sparkle:edSignature="70tom92MgLnLEpQulHVSPKnWXy/Xh51TJoEPp6h+51PT2vLvqSmRKVqipu+zAfPNQZZN1ge6KAy7acAcrpPTCA=="
+                length="14521136"
             />
         </item>
         <item>
