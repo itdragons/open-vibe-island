@@ -8,6 +8,24 @@
         <!-- Items are added by .github/workflows/wg-release.yml via scripts/update-appcast-wg.sh -->
         <item>
             <title>Version 1.0.9</title>
+            <sparkle:version>21</sparkle:version>
+            <sparkle:shortVersionString>1.0.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Fri, 16 Oct 2026 03:24:54 +0000</pubDate>
+            <description><![CDATA[
+                <ul>
+                    <li>{"message":"Not Found","documentation_url":"https://docs.github.com/rest/git/tags#get-a-tag","status":"404"}</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/itdragons/open-vibe-island/releases/download/wg-v1.0.9/WG.Open.Island-1.0.9.zip"
+                type="application/octet-stream"
+                sparkle:edSignature="m2f4HRTjoCAPnv2vUGtOTKO0eYNfVY15sA6Yc3k4B+Q4Y3MhuzltrTR6lmCTJm0Vz3DrPU09+jUnjAUJHGw1Cw=="
+                length="14521139"
+            />
+        </item>
+        <item>
+            <title>Version 1.0.9</title>
             <sparkle:version>19</sparkle:version>
             <sparkle:shortVersionString>1.0.9</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
